@@ -1,0 +1,1112 @@
+openapi: 3.0.0
+info:
+  title: European Sleeper API
+  version: 1.0.0
+servers:
+  - url: https://europeansleeperprod-api.azurewebsites.net/api
+paths:
+  /search/trains:
+    post:
+      tags:
+        - Search
+      summary: Train Search
+      requestBody:
+        $ref: '#/components/requestBodies/TrainSearchRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainSearchResult'
+  /search/availability:
+    post:
+      tags:
+        - Search
+      summary: Availability Search
+      parameters:
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [de-DE, en-GB, nl-NL, fr-FR]
+          description: locale
+          example: de-DE
+      requestBody:
+        $ref: '#/components/requestBodies/AvailabilityRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availabilityResult:
+                    description: result of availability search
+                    type: object
+                    properties:
+                      availability:
+                        $ref: '#/components/schemas/Availability'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                type: https://tools.ietf.org/html/rfc7231#section-6.5.1
+                title: One or more validation errors occurred.
+                status: 400
+                traceId: 00-63587f972ae571617500feaaff56bd10-699866a58da122e0-00
+                errors:
+                  PassengerTypes: [Interrail and non-interrail cannot be mixed]
+  /booking/upsert:
+    post:
+      tags:
+        - Booking
+      summary: Create Booking
+      description: |-
+        Creates or updates booking with personal information and reservation request, including route, passenger, and bicycle information.
+        
+        (technical hint: upsert = update + insert)
+      requestBody:
+        $ref: '#/components/requestBodies/ReservationRequest'
+      parameters:
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [de-DE, en-GB, nl-NL, fr-FR]
+          description: locale
+          example: de-DE
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+  /booking/get-authenticated/{bookingId}:
+    get:
+      tags:
+        - Booking
+      summary: Booking Status
+      description: Request current booking status
+      parameters:
+        - in: path
+          name: bookingId
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: UUID from POST /booking/upsert
+          example: 44c5d6b2-538a-4fac-c9ef-08db71bc1c52
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+  /booking/start-checkout:
+    post:
+      tags:
+        - Booking
+      summary: Checkout
+      description: Returns a link to the checkout page for requested booking.
+      parameters:
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [de-DE, en-GB, nl-NL, fr-FR]
+          description: locale
+          example: de-DE
+        - name: bookingId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: UUID
+          example: 44c5d6b2-538a-4fac-c9ef-08db71bc1c52
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkoutUrl:
+                    description: URL to checkout page
+                    type: string
+                    format: uri
+                    example: https://www.mollie.com/checkout/select-method/HgAx7Xnsqh
+  /booking/status:
+    get:
+      tags:
+        - Booking
+      summary: Booking Payment Status
+      description: Returns an object containing payment status for requested booking.
+      parameters:
+        - name: bookingId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: UUID
+          example: 44c5d6b2-538a-4fac-c9ef-08db71bc1c52
+        - name: paymentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: UUID (source?)
+          example: a02af038-070d-4927-b942-1f4a21126434
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isPaid:
+                    description: indicates whether requested booking is already paid
+                    type: boolean
+                    example: false
+  /booking/cancel-trip:
+    post:
+      tags:
+        - Booking
+      summary: Cancel Booking (Before Payment Initiation)
+      description: Cancel existing booking before initiation of payment.
+      parameters:
+        - name: bookingId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: UUID
+          example: 44c5d6b2-538a-4fac-c9ef-08db71bc1c52
+        - name: tripId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: UUID
+          example: 14bd8c76-2625-46fa-25c4-08db71b8ba70
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+              example:
+                booking:
+                  id: 9438cc08-74e0-4dae-cae0-08db71bc1c52
+                  bookingCode: 2ATB-YSKU
+                  state: 0
+                  expiresAt: null
+                  firstName: Max
+                  lastName: Mustermann
+                  emailAddress: a.b@c.de
+                  phoneNumber: +491234567890
+                  trips: []
+                  isPartnerBooking: false
+                tripSectionDetourInfo: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /booking/cancel-unpaid-booking:
+    post:
+      tags:
+        - Booking
+      summary: Cancel Booking (After Payment Initiation)
+      description: |-
+        Cancel existing booking after initiation of payment, but before payment is specified and processed.
+      parameters:
+        - name: bookingId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: UUID
+          example: 44c5d6b2-538a-4fac-c9ef-08db71bc1c52
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  requestBodies:
+    AvailabilityRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AvailabilityRequest'
+    ReservationRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Reservation'
+    TrainSearchRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TrainSearch'
+  schemas:
+    Availability:
+      description: details from availability search
+      type: object
+      properties:
+        requestedDepartureStationId:
+          description: 7-digit EVA number of requested departure station
+          type: string
+          example: 8800104
+        requestedArrivalStationId:
+          description: 7-digit EVA number of requested arrival station
+          type: string
+          example: 8010100
+        departureStationId:
+          description: 7-digit EVA number of actual departure station
+          type: string
+          example: 8800104
+        departureStationName:
+          description: name of actual departure station
+          type: string
+          example: Bruxelles Midi
+        departureTime:
+          description: departure date and time (YYYY-MM-DDTHH:mm:ss)
+          type: string
+          example: 2023-06-23T18:01:00
+        arrivalStationId:
+          description: 7-digit EVA number of actual arrival station
+          type: string
+          example: 8010102
+        arrivalStationName:
+          description: name of actual arrival station
+          type: string
+          example: Berlin-Gesundbrunnen
+        arrivalTime:
+          description: arrival date and time (YYYY-MM-DDTHH:mm:ss)
+          type: string
+          example: 2023-06-24T07:03:00
+        priceClasses:
+          description: |-
+            list of available price class objects; depending on actual availability, not all price classes will show up
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceClass'
+        sections:
+          description: list of contiguous sections of trip
+          type: array
+          items:
+            $ref: '#/components/schemas/Section'
+    AvailabilityRequest:
+      description: JSON object holding information required to request availability details for trip
+      type: object
+      properties:
+        trainRouteId:
+          description: train route ID
+          type: string
+          format: uuid
+          example: 77ab1c5a-ea0b-4634-7cdd-08db0daabe3f
+        fromLocationId:
+          description: 7-digit EVA number of departure station
+          type: object
+          example: 8800104
+        toLocationId:
+          description: 7-digit EVA number arrival departure station
+          type: object
+          example: 8010100
+        passengerTypes:
+          description: |-
+            list of requested passenger types; possible values:
+            - 44 = Interrail / Eurail
+            - 72 = Adult
+            - 73 = Child (4-11 years old)
+            
+            Interrail / Eurail cannot be combined with other passenger types in same request
+          type: array
+          items:
+            type: integer
+            enum: [44, 72, 73]
+            example: 72
+        trainNumber:
+          description: train number (without type)
+          type: string
+          example:  453
+        travelDate:
+            description: travel date and time (YYYY-MM-DDTHH:mm:ss)
+            type: string
+            example: 2023-06-23T00:00:00
+        bicycleCount:
+          description: number of requested bicycle places
+          type: integer
+          minimum: 0
+          maximum: 6
+          example: 0
+    Bicycle:
+      description: bicycle details
+      type: object
+      properties:
+        id:
+          description: reservation ID of this bicycle
+          type: string
+          format: uuid
+          example: 101cb34a-e3ac-4444-7596-08db71b793f6
+        coachNumber:
+          description: number of train car which houses the bicycle place
+          type: string
+          example: 2
+        place:
+          description: number of bicycle place
+          type: string
+          example: 86
+        price:
+          description: price for this bike reservation in Euro (€))
+          type: number
+          minimum: 0
+          example: 0
+    BicycleReservation:
+      description: bicycle reservation
+      type: array
+      items:
+        $ref: '#/components/schemas/BicycleReservationDetails'
+    BicycleReservationDetails:
+      description: bicycle reservation details
+      type: object
+      properties:
+        id:
+          description: reservation ID for all bicycles in this reservation
+          type: string
+          format: uuid
+          example: 101cb34a-e3ac-4444-7596-08db71b793f6
+        bicycles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bicycle'
+        price:
+          description: price for all bicycles in reservation in Euro (€))
+          type: number
+          minimum: 0
+          example: 0
+    Booking:
+      allOf:
+        - $ref: '#/components/schemas/PersonalDetails'
+        - type: object
+          properties:
+            booking:
+              $ref: '#/components/schemas/BookingDetails'
+            tripSectionDetourInfo:
+              description: |-
+                contains detour information; property keys are UUIDs; at least one property (= detour entry) seems to be available per trip direction (outward/return) even if no detours exist
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/DetourEntry'
+    BookingDetails:
+      description: booking details
+      type: object
+      properties:
+        id:
+          description: booking ID
+          type: string
+          format: uuid
+          example: 44c5d6b2-538a-4fac-c9ef-08db71bc1c52
+        bookingCode:
+          description: |-
+            unique alphanumerical booking code (format: XXXX-XXXX)
+          type: string
+          example: GWL5-MHPC
+        state:
+          description: booking state # TODO possible values? semantics?
+          type: integer
+          minimum: 0
+          example: 0
+        expiresAt:
+          description: booking expiration date (YYYY-MM-DDTHH:mm:ss.ffffff+hh:mm)
+          type: string
+          format: date-time
+          example: 2023-06-23T14:19:06.1266225+00:00
+        trips:
+          description: list of trips associated with booking
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingTripDetails'
+        isPartnerBooking:
+          description: is partner booking # TODO meaning? possibly night train of different operator, e. g. ÖBB?
+          type: boolean
+          example: false
+    BookingTripDetails:
+      description: detail trip information contained in booking
+      type: object
+      properties:
+        id:
+          description: trip ID
+          type: string
+          format: uuid
+          example: 4fee7278-616e-44ae-24ad-08db71b8ba70
+        sections:
+          description: sections of trip
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingTripSection'
+    BookingTripSection:
+      description: section of trip in booking
+      type: object
+      nullable: true
+      properties:
+        id:
+          description: section ID
+          type: string
+          format: uuid
+          example: f0fec69c-6626-4287-a603-08db71b8ba71
+        placeTypeGroup:
+            description: requested comfort class
+            type: string
+            enum: [seat, couchette, berth]
+            example: couchette
+        placeType:
+            description: requested sub-category of comfort class
+            type: string
+            enum: [seat-second-class, seat-second-class-private, couchette-4, couchette-6, couchette-6-private, couchette-4-women-only, berth-single, berth-double, berth-triple, berth-triple-women-only]
+            example: couchette-6
+        fareType:
+          description: requested ticket type
+          type: string
+          enum: [easy-night, good-night, flex-night]
+          example: flex-night
+        departureStationId:
+          description: 7-digit EVA number of departure station
+          type: string
+          example: 8800104
+        arrivalStationId:
+          description: 7-digit EVA number of arrival station
+          type: string
+          example: 8010102
+        departureTime:
+          description: departure date and time (YYYY-MM-DDTHH:mm:ss)
+          type: string
+          example: 2023-06-23T18:01:00
+        arrivalTime:
+          description: arrival date and time (YYYY-MM-DDTHH:mm:ss)
+          type: string
+          example: 2023-06-24T07:03:00
+        departureTrainRouteDetourId:
+          description: ID of detour information for departure station; null if not available
+          type: string
+          nullable: true
+          example: null
+        arrivalTrainRouteDetourId:
+          description: ID of detour information for arrival station; null if not available
+          type: string
+          nullable: true
+          example: 92137872-7b82-4ec3-8e62-691b94ed7490
+        passengerReservations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PassengerReservation'
+        bicycleReservations:
+          $ref: '#/components/schemas/BicycleReservation'
+        allPassengersInSameCompartment:
+          description: indicates whether all passengers have seat reservations in the same compartment
+          type: boolean
+          example: true
+    DetourEntry:
+      description: entry representing one detour
+      type: object
+      nullable: true
+      properties:
+        requestedDepartureStationId:
+          description: |-
+            7-digit EVA number of requested departure station; null if not affected by detour
+          type: string
+          nullable: true
+          example: null
+        requestedArrivalStationId:
+          description: |-
+            7-digit EVA number of requested arrival station; null if not affected by detour
+          type: string
+          nullable: true
+          example: 8010100
+        alternativeDepartureStationId:
+          description: |-
+            7-digit EVA number of actual departure station after detour; null if not affected by detour
+          type: string
+          nullable: true
+          example: null
+        alternativeArrivalStationId:
+          description: |-
+            7-digit EVA number of actual arrival station after detour; null if not affected by detour
+          type: string
+          nullable: true
+          example: 8010102
+    DetourInfo:
+      description: information about detours regarding departure or arrival station
+      type: object
+      properties:
+        alternativeFromId:
+          description: 7-digit EVA number of alternative departure station
+          type: string
+          nullable: true
+          example: null
+        alternativeToId:
+          description: 7-digit EVA number of alternative arrival station
+          type: string
+          nullable: true
+          example:  8010102
+        hasDetour:
+          description: indicates whether detour is active
+          type: boolean
+          example: true
+    ErrorResponse:
+      description: generic error response
+      type: object
+      properties:
+        type:
+          description: link to IETF definition of error type
+          type: string
+          example: https://tools.ietf.org/html/rfc7231#section-6.5.1
+        title:
+          description: error type
+          type: string
+          example: Bad Request
+        status:
+          description: error code
+          type: integer
+          example: 400
+        traceId:
+          description: internal error trace ID
+          type: string
+          example: 00-a962417ec40df20d7df1eb47dd1a9fda-efd20202321d90d9-00
+        errors:
+          description: list of errors for applicable category
+          type: object
+          nullable: true
+          properties:
+            PassengerTypes:
+              description: errors regarding passenger types
+              type: array
+              items:
+                type: string
+                example: Interrail and non-interrail cannot be mixed
+    FareType:
+      description: type of fare, including name, price, and availability
+      type: object
+      nullable: true
+      properties:
+        id:
+          description: |-
+            name of ticket / fare level; Interrail / Eurail may only book good-night (?)
+          type: string
+          enum: [easy-night, good-night, flex-night]
+          example: easy-night
+        bookable:
+          description: indicates whether this fare is bookable
+          type: boolean
+          example: false
+        availableSeats:
+          description: number of available seats/places for specified comfort level and fare
+          type: integer
+          minimum: 0
+          example: 0
+        price:
+          description: price in Euro (€) for specified comfort level and fare
+          type: integer
+          minimum: 0
+          example: 129
+    Line:
+      description: information about train line; not yet implemented?
+      type: object
+      properties:
+        id:
+          description: line ID
+          type: integer
+          minimum: 0
+          example: 0
+        connectionId:
+          description: connection ID
+          type: integer
+          minimum: 0
+          example: 0
+        code:
+          description: code # TODO meaning? not yet implemented?
+          type: string # TODO verify
+          nullable: true
+          example: null
+        from:
+          description: from # TODO possibly departureStationId of start of line, not yet implemented?
+          type: string # TODO verify
+          nullable: true
+          example: null
+        to:
+          description: to # TODO possibly arrivalstationStationId of end of line, not yet implemented?
+          type: string # TODO verify
+          nullable: true
+          example: null
+    Passenger:
+      description: passenger details
+      allOf:
+        - $ref: '#/components/schemas/PersonalDetails'
+        - type: object
+          properties:
+            dateOfBirth:
+              description: date of birth of passenger 
+              type: string
+              nullable: true
+              example: null
+            passengerType:
+              description: |-
+                requested passenger type; possible values:
+                - 44 = Interrail / Eurail
+                - 72 = Adult
+                - 73 = Child (4-11 years old)
+              type: integer
+              enum: [44, 72, 73]
+              example: 72
+    PassengerReservation:
+      description: reservation information for all passengers
+      type: object
+      properties:
+        id:
+          description: reservation ID
+          type: string
+          format: uuid
+          example: 7f47a671-3763-4bcb-08c1-08db71b8ba72
+        price:
+          description: price of entire reservation in Euro (€)
+          type: integer
+          minimum: 0
+          example: 159
+        passengers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PassengerReservationDetails'
+    PassengerReservationDetails:
+      description: details for single passenger in reservation
+      type: object
+      properties:
+        id:
+          description: passenger ID
+          type: string
+          format: uuid
+          example: 3b309481-ae01-494c-d5dc-08db71b8ba72
+        passengerType:
+          description: |-
+            requested passenger type; possible values:
+            - 44 = Interrail / Eurail
+            - 72 = Adult
+            - 73 = Child (4-11 years old):
+          type: integer
+          enum: [44, 72, 73]
+          example: 72
+        tariff:
+          description: |-
+            tariff for passenger type (incomplete/unconfirmed); maybe tied to length of trip? similar values to passengerType:
+            - 44 = Interrail / Eurail
+            - 64 = Adult, Booker did not travel
+            - 72 = Adult
+            - 73 = Child (4-11 years old):
+            - 87 = 1 Adult, 1 Child, Booker did not travel
+          type: integer
+          # enum: [44, 64, 72, 73, 87] TODO add back in once list is considered complete
+          example: 72
+        coachNumber:
+          description: number of train car housing reserved seat/place
+          type: string
+          example: 8
+        compartmentNumber:
+          description: number of train compartment housing reserved seat/place
+          type: string
+          example: 8
+        place:
+          description: number of reserved seat/place
+          type: string
+          example: 83
+        price:
+          description: price of reservation for passenger in Euro (€)
+          type: integer
+          minimum: 0
+          example: 159
+    PersonalDetails:
+      description: |-
+        personal details (necessary for at least one person within travel party, optional for additional adults, not allowed to submit for children)
+      type: object
+      properties:
+        firstName:
+          description: first name
+          type: string
+          nullable: true
+          example: Max
+        lastName: 
+          description: last name
+          type: string
+          nullable: true
+          example: Mustermann
+        emailAddress: 
+          description: email address
+          type: string
+          format: email
+          nullable: true
+          example: max.mustermann@abc.de
+        phoneNumber: 
+          description: international phone number
+          type: string
+          nullable: true
+          example: +491234567890
+    PriceClass:
+      description: details for price/comfort class
+      type: object
+      properties:
+        placeTypeKey:
+          description: name of price class
+          type: string
+          enum: [seat-second-class, seat-second-class-private, couchette-4, couchette-6, couchette-6-private, couchette-4-women-only, berth-single, berth-double, berth-triple, berth-triple-women-only]
+          example: seat-second-class
+        placeTypeIcon: 
+          description: |-
+            icon type; observed use:
+            - 1 = couchette-6-private
+            - 2 = seat-second-class
+            - 3 = seat-second-class-private
+            - 0 = other price classes
+          type: integer
+          example: 2
+        freeSeatsCount:
+          description: number of total free seats in price category
+          type: integer
+          nullable: true
+          minimum: 0
+          example: 42
+        price:
+          description: price for cheapest available fare in price category in Euro (€)
+          type: integer
+          nullable: true
+          minimum: 0
+          example: 79
+        fareTypes:
+          description: list of objects containing different fare types
+          type: array
+          items:
+            $ref: '#/components/schemas/FareType'
+        bookable:
+          description: indicates whether any fare in the price class is bookable
+          type: boolean
+          example: true
+    Reservation:
+      description: |-
+        a JSON object containing reservation details, including personal and route information
+      type: object
+      properties:
+        earlyAccessCode:
+          description: early access code
+          type: string
+          nullable: true
+          example: null
+        isNewBooking:
+          description: indicates whether to create new or update existing booking
+          type: boolean
+          example: true
+        bookingId:
+          description: booking ID, if existing booking should be updated
+          type: string
+          nullable: true
+          example: null
+        booker:
+          $ref: '#/components/schemas/PersonalDetails'
+        reservation:
+          description: reservation details
+          type: object
+          properties:
+            reservationRequests:
+              description: |-
+                list of reservation request details; one item for outward trip, one item for return trip
+              type: array
+              minItems: 1
+              maxItems: 2
+              items:
+                $ref: '#/components/schemas/ReservationRequestDetails'
+    ReservationRequestDetails:
+      description: reservation request details
+      type: object
+      properties:
+        route:
+          $ref: '#/components/schemas/Route'
+        passengers:
+          description: |-
+            list of passengers; if first passenger is booker, fields other than emailAddress and phoneNumber will be null; fields for further passengers are optional and may be null
+          type: array
+          items:
+            $ref: '#/components/schemas/Passenger'
+        bicycleCount:
+          description: number of requested bicycle places
+          type: integer
+          minimum: 0
+          maximum: 6
+          example: 0
+    Route:
+      description: route details
+      type: object
+      properties:
+          trainRouteId:
+            description: UUID
+            type: string
+            format: uuid
+            example: 77ab1c5a-ea0b-4634-7cdd-08db0daabe3f
+          trainNumber:
+            description: train number (without type)
+            type: string
+            example: 453
+          travelDate:
+            description: travel date and time (YYYY-MM-DDTHH:mm:ss)
+            type: string
+            example: 2023-06-23T00:00:00
+          sections:
+            description: list of route sections
+            type: array
+            items:
+              type: object
+              properties:
+                section:
+                  $ref: '#/components/schemas/RouteSection'
+          placeTypeGroup:
+            description: requested comfort class
+            type: string
+            enum: [seat, couchette, berth]
+            example: couchette
+          placeType:
+            description: requested sub-category of comfort class
+            type: string
+            enum: [seat-second-class, seat-second-class-private, couchette-4, couchette-6, couchette-6-private, couchette-4-women-only, berth-single, berth-double, berth-triple, berth-triple-women-only]
+            example: couchette-6
+          fareType:
+            description: requested ticket type
+            type: string
+            enum: [easy-night, good-night, flex-night]
+            example: flex-night
+    RouteSearchResultDetails:
+      description: details of single route search result
+      type: object
+      properties:
+        routeId:
+          description: route ID
+          type: string
+          format: uuid
+          example: 77ab1c5a-ea0b-4634-7cdd-08db0daabe3f
+        departureTime:
+          description: departure date and time (YYYY-MM-DDTHH:mm:ss)
+          type: string
+          example: 2023-06-23T18:01:00
+        trip:
+          $ref: '#/components/schemas/Trip'
+        showNoTrainsOnRequestDayAlert:
+          description: |-
+            indicates if alert should be shown that no train connections on requested date exist
+          type: boolean
+          example: false
+    RouteSection:
+      description: section of route between two stations
+      type: object
+      properties:
+        fromStationId:
+          description: 7-digit EVA number of section start station
+          type: string
+          example: 8800104
+        toStationId:
+          description: 7-digit EVA number of section end station
+          type: string
+          example: 8010100
+        sectionId:
+          description: index of current section object
+          type: integer
+          minimum: 1
+          example: 1
+    Section:
+      description: contiguous section of the trip
+      type: object
+      properties:
+        id: 
+          description: section ID
+          type: integer
+          example: 1
+        line:
+          $ref: '#/components/schemas/Line'
+        notices:
+          description: notices # TODO enhance description
+          type: string # TODO verify; probably object
+          nullable: true
+          example: null
+        departureStationId:
+          description: 7-digit EVA number of departure station
+          type: string
+          example: 8800104
+        departureStationName:
+          description: name of departure station (not yet in use?)
+          type: string
+          example: ''
+        departureTime:
+          description: departure date and time (YYYY-MM-DDTHH:mm:ss; not yet in use?)
+          type: string
+          example: 0001-01-01T00:00:00
+        arrivalStationId:
+          description: 7-digit EVA number of arrival station
+          type: string
+          example: 8010100
+        arrivalStationName:
+          description: name of arrival station (not yet in use?)
+          type: string
+          example: ''
+        arrivalTime:
+          description: arrival date and time (YYYY-MM-DDTHH:mm:ss; not yet in use?)
+          type: string
+          example: 0001-01-01T00:00:00
+    TrainSearch:
+      description: a JSON object containing search details
+      type: object
+      properties:
+        fromLocationId:
+          description: 7-digit EVA number of departure station
+          type: string
+          example: 8800104
+        toLocationId:
+          description: 7-digit EVA number of arrival station
+          type: string
+          example: 8010100
+        departureDate:
+          description: departure ISO datetime
+          type: string
+          format: date-time
+          example: 2023-06-23T00:00:00.000Z
+        returnDate:
+          description: return journey ISO datetime (or null if no return journey was requested)
+          type: string
+          format: date-time
+          nullable: true
+          example: 2023-06-24T00:00:00.000Z
+        passengerTypes:
+          description: |-
+            list of requested passenger types; possible values:
+            - 44 = Interrail / Eurail
+            - 72 = Adult
+            - 73 = Child (4-11 years old)
+          type: array
+          items:
+            type: integer
+            enum: [44, 72, 73]
+            example: 72
+        bicycleCount:
+          description: number of requested bicycle spaces
+          type: integer
+          minimum: 0
+          maximum: 6
+          example: 0
+    TrainSearchResult:
+      description: JSON object containing results of train search
+      type: object
+      properties:
+        routeSearchResults:
+          description: route search results
+          type: array
+          items:
+            type: object
+            properties:
+              searchResultOutward:
+                description: |-
+                  list of route search result details for outward journey for three consecutive days starting with departure date
+                type: array
+                items:
+                  $ref: '#/components/schemas/RouteSearchResultDetails'
+                minItems: 3
+                maxItems: 3
+              searchResultReturn:
+                description: |-
+                  list of route search result details for return journey for three consecutive days starting with return date; empty if no return journey was requested
+                type: array
+                items:
+                  $ref: '#/components/schemas/RouteSearchResultDetails'
+                minItems: 0
+                maxItems: 3
+        showNoTrainsOnRequestOutwardDateAlert:
+          description: |-
+            indicates if alert should be shown that no train connections on requested outward date exist
+          type: boolean
+          example: false
+        showNoTrainsOnRequestReturnDateAlert:
+          description: |-
+            indicates if alert should be shown that no train connections on requested return date exist
+          type: boolean
+          example: false
+    Trip:
+      description: trip details
+      type: object
+      nullable: true
+      properties:
+        trainNumber:
+          description: train number (without type)
+          type: string
+          example: 453
+        travelDate:
+          description: travel date and time (YYYY-MM-DDTHH:mm:ss)
+          type: string
+          example: 2023-06-23T00:00:00
+        arrivalTime:
+          description: arrival date and time (YYYY-MM-DDTHH:mm:ss)
+          type: string
+          example: 2023-06-24T07:03:00
+        fromLocationId:
+          description: 7-digit EVA number of departure station
+          type: string
+          example: 8800104
+        toLocationId:
+          description: 7-digit EVA number of arrival station
+          type: string
+          example: 8010100
+        passengerTypes:
+          description: list of requested passenger types
+          type: array
+          items:
+            description: |-
+              requested passenger type; possible values:
+              - 44 = Interrail / Eurail
+              - 72 = Adult
+              - 73 = Child (4-11 years old)
+            type: integer
+            enum: [44, 72, 73]
+            example: 72
+          minItems: 1
+          maxItems: 6
+        bicycleCount:
+          description: requested number of bicycle places
+          type: integer
+          minimum: 0
+          maximum: 6
+          example: 0
+        bookable:
+          description: indicates whether requested trip is bookable
+          type: boolean
+          example: true
+        priceFrom:
+          description: cheapest available ticket price in Euro (€))
+          type: integer
+          nullable: true
+          minimum: 0
+          example:  49
+        isOvernight:
+          description: indicates whether journey takes place over night (date change?)
+          type: boolean
+          example: true
+        detourInfo:
+          $ref: '#/components/schemas/DetourInfo'

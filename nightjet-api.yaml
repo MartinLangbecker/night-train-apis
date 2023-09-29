@@ -1,0 +1,950 @@
+openapi: 3.0.0
+info:
+  title: NightJet API
+  version: 1.0.0
+servers:
+  - url: https://www.nightjet.com/nj-booking
+    description: nightjet.com API
+paths:
+  /stations/get:
+    get:
+      tags:
+        - Stations
+      summary: Get Specific Station
+      description: Returns a station object for specified EVA number.
+      parameters:
+        - in: query
+          name: number
+          schema:
+            type: integer
+            minimum: 1000001
+            maximum: 9999999
+          description: 7-digit EVA number
+          required: true
+          example: 8796001
+        - in: query
+          name: lang
+          schema:
+            type: string
+            enum: [de, en, int]
+          description: station name localization
+          example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StationListEntry'
+        '400':
+          description: Bad Request
+  /stations/find:
+    get:
+      tags:
+        - Stations
+      summary: List Stations
+      description: |-
+        Returns a list of all stations with NightJet service. Sort and filter list using parameters.
+      parameters:
+        - in: query
+          name: lang
+          schema:
+            type: string
+            enum: [de, en, int]
+          description: station name localization
+          example: de
+        - in: query
+          name: country
+          schema:
+            type: string
+          description: 2-letter UIC country code; start list with stations from specified country
+          example: de
+        - in: query
+          name: name
+          schema:
+            type: string
+          description: only display stations with same prefix
+          example: Berlin
+        - in: query
+          name: evaFrom
+          schema:
+            type: integer
+          description: 7-digit EVA number; only display stations with service from specified station
+          example: 8796001
+        - in: query
+          name: evaTo
+          schema:
+            type: integer
+          description: 7-digit EVA number; only display stations with service to specified station
+          example: 8796001
+        - in: query
+          name: t
+          schema:
+            type: integer
+          description: UNIX timestamp in milliseconds (ms)
+          example: 1693440000000
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StationList'
+  /countries/{direction}/station/{eva}:
+    get:
+      tags:
+        - Countries
+      summary: Country <-> Station Search
+      description: |-
+        Returns a list of objects containing information about countries with currently existing and operating night train connections to/from the requested station.
+      parameters:
+        - in: path
+          name: direction
+          schema:
+            type: string
+            enum: [to, from]
+          required: true
+          description: travel direction ("to" or "from" specified station)
+        - in: path
+          name: eva
+          schema:
+            type: integer
+            minimum: 1000001
+            maximum: 9999999
+          required: true
+          description: 7-digit EVA number of train station 
+          example: 8010101
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountryList'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /countries/{direction}/country/{uic}:
+    get:
+      tags:
+        - Countries
+      summary: Country <-> Country Search
+      description: |-
+        Returns a list of objects containing information about countries with currently existing and operating night train connections to/from the requested country.
+        
+        Possible values for UIC country codes currently include (as of June 2023):
+        - 51 (Poland)
+        - 54 (Czechia)
+        - 55 (Hungary)
+        - 56 (Slovakia)
+        - 78 (Croatia)
+        - 79 (Slovenia)
+        - 80 (Germany)
+        - 81 (Austria)
+        - 83 (Italy)
+        - 84 (Netherlands)
+        - 85 (Switzerland)
+        - 87 (France)
+        - 88 (Belgium)
+        
+        Other valid UIC country codes return 200 OK with an empty list in the response body.
+      parameters:
+        - in: path
+          name: direction
+          schema:
+            type: string
+            enum: [to, from]
+          required: true
+          description: travel direction ("to" or "from" specified country)
+        - in: path
+          name: uic
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 99
+          required: true
+          description: 2-digit UIC country code
+          example: 80
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountryList'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /destinations/country/{uicFrom}/country/{uicTo}/{date}:
+    get:
+      tags:
+        - Destinations
+      summary: Train Relation Search (Country -> Country)
+      description: |-
+        Returns a list of night train connections between two countries on a given date. If the same country is used for both "from" and "to", all trains traversing that country will be returned.
+      parameters:
+        - in: path
+          name: uicFrom
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 99
+          required: true
+          description: 2-digit UIC country code of departure country
+          example: 80
+        - in: path
+          name: uicTo
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 99
+          required: true
+          description: 2-digit UIC country code of arrival country
+          example: 81
+        - in: path
+          name: date
+          schema:
+            type: string
+            format: date
+          required: true
+          description: journey date (YYYY-MM-DD)
+          example: 2023-08-31
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainRelation'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /destinations/country/{uicFrom}/station/{evaTo}/{date}:
+    get:
+      tags:
+        - Destinations
+      summary: Train Relation Search (Country -> Station)
+      description: |-
+        Returns a list of night train connections from a country to a station on a given date.
+      parameters:
+        - in: path
+          name: uicFrom
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 99
+          required: true
+          description: 2-digit UIC country code of departure country
+          example: 80
+        - in: path
+          name: evaTo
+          schema:
+            type: integer
+            minimum: 1000001
+            maximum: 9999999
+          required: true
+          description: 7-digit EVA number of arrival train station
+          example: 8010101
+        - in: path
+          name: date
+          schema:
+            type: string
+            format: date
+          required: true
+          description: journey date (YYYY-MM-DD)
+          example: 2023-08-31
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainRelation'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /destinations/station/{evaFrom}/country/{uicTo}/{date}:
+    get:
+      tags:
+        - Destinations
+      summary: Train Relation Search (Station -> Country)
+      description: |-
+        Returns a list of night train connections from a station to a country on a given date.
+      parameters:
+        - in: path
+          name: evaFrom
+          schema:
+            type: integer
+            minimum: 1000001
+            maximum: 9999999
+          required: true
+          description: 7-digit EVA number of departure train station
+          example: 8010101
+        - in: path
+          name: uicTo
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 99
+          required: true
+          description: 2-digit UIC country code of arrival country
+          example: 80
+        - in: path
+          name: date
+          schema:
+            type: string
+            format: date
+          required: true
+          description: journey date (YYYY-MM-DD)
+          example: 2023-08-31
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainRelation'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /destinations/train/{trainName}/{date}:
+    get:
+      tags:
+        - Destinations
+      summary: Train Details Search
+      description: |-
+        Returns an object containing details for the specified train and date, including stations and arrival/departure times along the route. Details will be displayed even if no train is running on the specified date (default route data displayed in that case?)
+      parameters:
+        - in: path
+          name: trainName
+          schema:
+            type: string
+          required: true
+          description: train type and number, separated with a space
+          example: EN 60237
+        - in: path
+          name: date
+          schema:
+            type: string
+            format: date
+          required: true
+          description: journey date (YYYY-MM-DD)
+          example: 2023-08-31
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainDetails'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /destinations/offers/{trainName}/{evaFrom}/{evaTo}/{timestamp}:
+    get:
+      tags:
+        - Destinations
+      summary: Train Price Search
+      description: |-
+        Returns a list of up to three journeys of a given train between two train stations, containing the cheapest available prices for each comfort class offered.
+      parameters:
+        - in: path
+          name: trainName
+          schema:
+            type: string
+          required: true
+          description: train type and number, separated with a space
+          example: EN 60237
+        - in: path
+          name: evaFrom
+          schema:
+            type: integer
+            minimum: 1000001
+            maximum: 9999999
+          required: true
+          description: 7-digit EVA number of departure train station
+          example: 8000096
+        - in: path
+          name: evaTo
+          schema:
+            type: integer
+            minimum: 1000001
+            maximum: 9999999
+          required: true
+          description: 7-digit EVA number of arrival train station
+          example: 7800013
+        - in: path
+          name: timestamp
+          schema:
+            type: integer
+          required: true
+          description: journey date as UNIX timestamp in milliseconds (ms)
+          example: 1693440000000
+        - name: forward
+          in: query
+          schema:
+            type: boolean
+          description: |-
+            search for journeys before (false) or after (true) specified journey date (default: true)
+          example: true
+        - name: max
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 3
+          description: 'number of results (1-3; default: 3)'
+          example: 3
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainOffers'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /connection/find/{evaFrom}/{evaTo}/{date}/{time}:
+    get:
+      tags:
+        - Connection
+      summary: Train Connection Search
+      description: |-
+        Find NightJet connections between two stations at a specified date and time. Returns a list of next possible connections with options for sorting and filtering.
+      parameters:
+        - in: path
+          name: evaFrom
+          schema:
+            type: integer
+            minimum: 1000001
+            maximum: 9999999
+          required: true
+          description: 7-digit EVA number of departure train station
+          example: 8796001
+        - in: path
+          name: evaTo
+          schema:
+            type: integer
+            minimum: 1000001
+            maximum: 9999999
+          required: true
+          description: 7-digit EVA number of arrival train station
+          example: 8103000
+        - in: path
+          name: date
+          schema:
+            type: number
+          required: true
+          description: journey date (DDMMYYYY)
+          example: 23062023
+        - in: path
+          name: time
+          schema:
+            type: string
+          required: true
+          description: journey time (HH:mm, 24h format)
+          example: 13:37
+        - name: skip
+          in: query
+          schema:
+            type: number
+            minimum: 0
+          description: skip specified number of results closest to search date-time
+          example: 3
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: 'limit number of results to specified value (default: 6)'
+          example: 3
+        - name: backward
+          in: query
+          schema:
+            type: boolean
+          description: 'search backwards in time from search parameter (default: false)' 
+          example: false
+        - name: lang
+          in: query
+          schema:
+            type: string
+          description: |-
+            2-letter UIC country code which changes localization of formatted date strings containing day of week and month (default: en)
+            
+            Note: This does not change train station names contained in response!
+          example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    Connection:
+      description: contains search results for connection between two train stations
+      type: object
+      properties:
+        evaFrom:
+          description: 7-digit EVA number of departure station
+          type: string
+          example: 8796001
+        evaTo:
+          description: 7-digit EVA number of arrival station
+          type: string
+          example: 8103000
+        date:
+          description: journey date (DDMMYYYY)
+          type: string
+          example: 23062023
+        time:
+          description: journey time (HH:mm,24h format)
+          type: string
+          example: 13:37
+        limit:
+          description: maximum number of results contained in property 'results'
+          type: number
+          example: 6
+        results:
+          $ref: '#/components/schemas/ConnectionResult'
+    ConnectionResult:
+      description: contains schedule information for specific train connection
+      type: object
+      properties:
+        train:
+          description: train type and number, separated by a space
+          type: string
+          example: NJ 469
+        duration:
+          description: duration in milliseconds (ms)
+          type: number
+          example: 54900000
+        duration_fmt:
+          description: localized formatted duration
+          type: string
+          example: '15 Std 15 Min '
+        from:
+          $ref: '#/components/schemas/ConnectionResultDetails'
+        to:
+          $ref: '#/components/schemas/ConnectionResultDetails'
+    ConnectionResultDetails:
+      description: contains detailed information about departure or arrival station of connection
+      type: object
+      properties:
+        eva:
+          description: 7-digit EVA number of station
+          type: string
+          example: 8103000
+        number:
+          description: 7-digit EVA number of station
+          type: string
+          example: 8103000
+        name:
+          description: station name
+          type: string
+          example: Wien Hbf
+        lon:
+          description: longitude coordinate
+          type: number
+          example: 16.377113
+        lat:
+          description: latitude coordinate
+          type: number
+          example: 48.185101
+        arr_dt:
+          description: arrival time as UNIX timestamp in milliseconds
+          type: integer
+          example: 1687767180000
+        arr_date:
+          description: localized formatted arrival date
+          type: string
+          example: Mo, 26. Juni. 2023
+        arr_time:
+          description: arrival time (HH:mm, 24h format)
+          type: string
+          example: 10:13
+        arr_fmt:
+          description: localized formatted arrival date-time
+          type: string
+          example: Mo, 26. Juni. 2023 10:13
+        dep_dt:
+          description: departure time as UNIX timestamp in milliseconds
+          type: integer
+          example: 1687767180000
+        dep_date:
+          description: localized formatted departure date
+          type: string
+          example: Mo, 26. Juni. 2023
+        dep_time:
+          description: departure time (HH:mm, 24h format)
+          type: string
+          example: 10:13
+        dep_fmt:
+          description: localized formatted departure date-time
+          type: string
+          example: Mo, 26. Juni. 2023 10:13
+        pickup_type:
+          description: passengers board the train at this station (0 = true, 1 = false)
+          type: integer
+          minimum: 0
+          maximum: 1
+          example: 1
+        drop_off_type:
+          description: passengers get off the train at this station (0 = true, 1 = false)
+          type: integer
+          minimum: 0
+          maximum: 1
+          example: 0
+    Coordinates:
+      description: latitude and longitude
+      type: array
+      items:
+        type: number
+        format: double
+        maxItems: 2
+      example:
+        - 48.185103
+        - 16.377114
+    CountryList:
+      description: List of country details
+      type: array
+      items:
+        $ref: '#/components/schemas/Country'
+    Country:
+      description: Contains detailed country information
+      type: object
+      properties:
+        iso:
+          description: 2-letter UIC country code
+          type: string
+          example: de
+        eva:
+          description: 2-digit UIC country code
+          type: string
+          example: 80
+        name:
+          $ref: '#/components/schemas/CountryNames'
+    CountryNames:
+      description: object holding localized country names
+      type: object
+      properties:
+        de:
+          description: German country name
+          type: string
+          example: Deutschland
+        it:
+          description: Italian country name
+          type: string
+          example: Germania
+        int:
+          description: international country name
+          type: string
+          example: Germany
+    ErrorResponse:
+      description: Holds error details
+      type: object
+      properties:
+        message:
+          description: Error message
+          type: string
+          example: Bad Request
+        _links:
+          description: relevant links
+          type: object
+          properties:
+            self:
+              type: object
+              properties:
+                href:
+                  description: relative URL
+                  type: string
+                  example: /countries/to/country/0
+                templated:
+                  type: boolean
+                  example: false
+        _embedded:
+          description: embedded objects
+          type: object
+          properties:
+            errors:
+              description: embedded errors
+              type: array
+              items:
+                type: object
+                properties:
+                  message:
+                    description: error message
+                    type: string
+                    example: 'toCountry: Invalid country code'
+                  _links:
+                    description: links related to the error
+                    type: object
+                    example: {}
+                  _embedded:
+                    description: embedded object
+                    type: object
+                    example: {}
+    Station:
+      description: train station data
+      type: object
+      properties:
+        eva:
+          description: 7-digit EVA number of station
+          type: string
+          example: 8103000
+        evaMeta:
+          description: 7-digit EVA number of meta station (optional)
+          type: string
+          example: 1190100
+        country:
+          description: 2-digit UIC country code
+          type: string
+          example: 81
+        name:
+          $ref: '#/components/schemas/StationNames'
+        coords:
+          $ref: '#/components/schemas/Coordinates'
+    StationList:
+      description: list of train stations with NightJet service
+      type: array
+      items:
+        $ref: '#/components/schemas/StationListEntry'
+    StationListEntry:
+      description: train station details
+      type: object
+      properties:
+        number:
+          description: 7-digit EVA number of station
+          type: integer
+          minimum: 1000001
+          maximum: 9999999
+          example: 8103000
+        meta:
+          description: name of station; only present if meta station, otherwise empty string
+          type: string
+          example: Wien
+        name:
+          description: name of station; only present if non-meta station, otherwise empty string
+          type: string
+          example: Wien Hbf
+        latitude:
+          description: latitude coordinate
+          type: number
+          example: 48.1851010
+        longitude:
+          description: longitude coordinate
+          type: number
+          example: 16.3771130
+      required:
+        - number
+        - meta
+        - name
+    StationNames:
+      description: object holding localized station names
+      type: object
+      properties:
+        de:
+          description: German station name
+          type: string
+          example: Wien Hbf
+        en:
+          description: English station name
+          type: string
+          example: Vienna Central Station
+        int:
+          description: international station name
+          type: string
+          example: Wien Hbf
+    Stop:
+      description: scheduled stop along train route
+      type: object
+      properties:
+        station:
+          $ref: '#/components/schemas/Station'
+        dep:
+          description: departure time as UNIX timestamp in milliseconds
+          type: integer
+          example: 1693506540000
+        depTime:
+          description: departure time (HH:mm)
+          type: string
+          example: 20:29
+        arr:
+          description: arrival time as UNIX timestamp in milliseconds
+          type: integer
+          example: 1693506540000
+        arrTime:
+          description: arrival time (HH:mm)
+          type: string
+          example: 20:29
+        dropoff:
+          description: passengers are allowed to get off the train
+          type: boolean
+          example: false
+        pickup:
+          description: passengers are allowed to board the train
+          type: boolean
+          example: true
+        car:
+          description: possibility to (un)load cars
+          type: boolean
+          example: false
+    Ticket:
+      description: cheapest available ticket
+      type: object
+      properties:
+        name:
+          description: ticket name
+          type: string
+          example: Komfortticket inkl. Reservierung
+        price:
+          description: ticket price in Euro (€)
+          type: number
+          example: 115.4
+    TrainDetails:
+      description: details regarding train operation
+      type: object
+      properties:
+        trainNumber:
+          description: train type and number, separated with a space
+          type: string
+          example: EN 60237
+        carTransport:
+          description: train provides car transportation
+          type: boolean
+          example: false
+        wheelchair:
+          description: train is suitable for people using wheelchairs
+          type: boolean
+          example: false
+        bicycle:
+          description: train provides bicycle transportation
+          type: boolean
+          example: false
+        operator:
+          description: notes train operator 
+          type: string
+          example: Operated by Kroatische Bahn HZ
+        partnerTrain:
+          description: train operator differs from ÖBB
+          type: boolean
+          example: true
+        seasonMessage:
+          description: message announcing deviations from regular schedule
+          type: object
+          properties:
+            de:
+              description: German message
+              type: string
+              example: Züge fahren täglich, ausgenommen 12.04. bis 16.05.2023
+            en:
+              description: English message
+              type: string
+              example: Trains run daily except April 12 - May 16
+            it:
+              description: Italian message
+              type: string
+              example: I treni circolano tutti i giorni, tranne dal 12.04 al 16.05.2023
+            fr:
+              description: French message
+              type: string
+              example: Les trains circulent tous les jours, sauf du 12.04. au 16.05.2023
+            nl:
+              description: Dutch message
+              type: string
+              example: Treinen rijden dagelijks behalve van 12.04. tot 16.05.2023
+        route:
+          description: contains list of stops and polyline
+          type: object
+          properties:
+            stops:
+              description: list of scheduled stops along route
+              type: array
+              items:
+                $ref: '#/components/schemas/Stop'
+            polyline:
+              description: outline of train route to display on map
+              type: string
+              example: ocwhHeh`w@j@sAsXmVmHyIiKaWmPq\\gQk\\iA_CaQyd@aCkHsBiMg@{K|BwXfFae@bFgVlP{WdOo`@dBeEbJwPdUmYf_@wVdP{K~HqJvLwVhGiInk@ob@ha@_[|[qU|GoD|TsI|\\_GdEqAxN{MlGkMlDeNbD}^|Fck@rFe]zGi^~DuSl\\uuAlIy^zJo_@zBeJzBiOh@k`@JaLlJqrAl@cIh@aUeAeg@C_Fl@_QnD{SlNq[xB}FlF}TlBaU@}OuBm\\YoH`AwVhDyKfPo[hLuNzW{Y|IaWxTcy@r@}C~AaLx@kQ_F}~@u@}HqDuNcJuQoCwNc@ay@?ys@gBi_@_DyQ}Ssw@g@wBsBgOiDcnCOyNiAmRkGca@mGy_@e@yDeCga@|@ybB~@{RnDc[lGwX`\\}z@lEwN`DyUbAgVxDouAWuYiDub@}@kGeIc\\w@mDgC{Qm@oTrAqWzBoMvD_Mp^gz@xLeXtNql@rDoUJeQw@gKaIw[a@aDu@eX`O{nCzMkkAn]{nC`k@ksDpDoSbJeSpqAqjBtIsJ|c@q_@rYsUvzAw`AnHwGrIiOdIeZxNg`@x@qBtSc^vAuCrFwTbEek@HgDy@eTcCuJmFiL_B{JNyJpCeKjGyF~JBnU~HlN`UrHvBlHwAtWiQzEkAbP~Ej_@lBfBTrPpGlHcBtEiJ`BeUzCyLdEcHpMuLjGwS|JaKtJy]vAcDjHaHbu@ed@f[eUj^mHnIqFxHsPzE_^`BkInCqG`GkGvFoBzFGnUxJbKNnLsGbKqTjIwUnBuPK{MaC}^rAsVpEgNpLsOfToT`NsGfZsIxH_HlEoJdi@k`B~EmLvRaVhLcGpO{Bfz@|AnMeDfHcJth@kqA`AgCbDgNvDoYhHsOlG{EbI}AbaErL|KsAzJyFrJcMxGqTrA_M|Bs{@j@{ItBaQbEkQtS}k@vBaEhIeI|HgBbIn@vGrDl~@v_AnI|L~J`ZzH|InJhCvOw@`HkD|OoP`GkBrIR~H|CtF|HhCpH`ErXlCnKhEpJ|F`G~FzAnRe@pN}@nJ{GhFmIrQwc@rDyRDuNiAcLuCqKcI}P_Se]cEwImCkO_@sLaBggAgBucAK{CcAwOsC_QyyDyfMiGeUiBgQqH_nDcCon@_AiNkg@mjE}CyMqs@_oByKk[aBkGqe@ouBgBoNwFsgAA}JpAoO~Ig^rA{I^_SiAgNq\\ghB{~@e`FeBmIiIgWu}@m_CmK}XgCkL_AqLPiQvJui@fBsHjEwJh}B{jDdDuEfXaZhV_RpfIigEccChoAhgC}qAdCyAfJcLhHcPlYsbAbAwDjCoQNsN{EkoBI_FnBuXlCuInv@uyAxQg^dEeO`CkPz@wSmB{n@MsGf@}g@h@uJhFe^b@gLiD}_@e@gJJq`AnDeVhFmJlJiG|MYdUpAlJ~DzShW~HlD~DVnJcBho@}VzC}A`H{H`FgLbg@sxB`Nim@`AiFdF{^dA_L~q@qyJzAyZBiQmAyVgSuiAkCuPoBuVSyTfFusD?ia@QgGsCq^cHod@{F}VgH_Tya@}|@uCqFkdAw_B_zEaoHmDwGuGsRaEyToTynCy@cQlAsUdE_QxHeLvIoD`aAwOxKaEz~AcpAPwAd\\wZfPiXzIeWjDqOzGse@|AuZF_fCXqg@`BaV~CsM~FgM`GoH|LcHn|G{s@zi@yFv[cEpLcC``@uMdSeLhWeSdS}T~U__@vFaK|hA_~BdD}HtMqb@rHc`@tAwJdK_iAr@aHvGwb@`Iq\\nrC}pKhCiKfF}XbDq_@^eJvJ{gKjNo`NnKc}JfBuh@x@{OpDke@dBaOhFc_@vD}RdIo_@bI}\\lNcd@~E}MhToh@pmF}sLfEaJjV_`@vEcK~DgQhCmXzCgQpFwW|Kod@nJsxC~Hii@zAc[|Bsc@r@{QhEsc@`i@wy@vZsf@kJdOhLcR|DeJpJk^l@iBt`AciCpCcU{@kQeNmv@q@eFyNczAm@uDqEgPeOk]kFoJaV_^{F}H}FmLcCeJkCaVe@gPtAaa@hBib@zB{g@X{EzDea@dCqOpY_y@zCsLdr@{kF`k@cjEnjA{zI~r@ymFtNeuA~I{y@`Eg`@v@sGlRky@pN{j@dF{Opo@wqAbPe^xWotAhTai@dGkYdFuNno@_sA|FsKzNoPxTePrk@i`@xCwCxLeUlJ{b@jAkExGcOrrAosA`MoHj[{EjH}ClIyIbOua@|@{BbIgLjZeOrZcTvScGdXqJbe@kh@jHmIhMsKfgAi_@~OaLpx@u~@~EeH`GeN~Q{m@rDyKlU{]tSoZ~Le[vEyJdFoG`ImFlhCyj@dF{@hL_@x^`BnJGrKqBdKcGlNyOtNs\\vDcRnJiaAvGwr@rDw[hGcQxMkMvOsBh\\rInRrBpMcAjq@}Nv\\iHnGsBzD}BlGqJxUs`AxHq^hHm\\zBuNJyN}A}KqDiKk^s~@oBqNhBgPpLy^hG{PfF}Xl@cL_@uTcG_[oz@}{Cok@wuAyByEeaAsbByWqZmLw[mDaHmHaGcRsIwf@c|@qTmVyCaHkCmN}KolBmAmRmCeNiRs_@mCwPO{Mf@{HlDiPhCkFlF{GvFsDnSaI|GwElJwK`EiM`AiSkDm~@gAiJkHqXsAyQx@cNfBqHpJqSrIyLfKuFjf@aIrEm@l]nGvfBkAdH@zOiBxRuGn`@wQzhAqd@hm@qWbKsDzL}G`NeOdH{Lzf@exAnIoZ|C}\\LoDr@qgHOuLaBo[sB}RqOap@uCwNiUcxBcAwTzB_jF]gMcEqZaNa_@wDsMcBsQwAsi@EcI``@u|E\\uHUoJoBiMsMmYwCoOkCc`@kA{FqDeHsHkEmVmBmXsTuFoJ_Hs^iFuGaE_Bc]mE_JqGuGuNgGi^sIiNmFyCmG}@mUzFgKz@kVwKaGeFyCcFkHe\\qBmIwGqHcUwR_DqFgCkLg@_IPi|@@aNc@gUkCa^e@_NaA}rCz@kTtQ_pARcOcDwSiJg[aDoXI{XtGqo@h@k[EmCoAcOkUo|Ay@wHJga@PoD~ByMbHwMtr@kj@`LgSzMwv@pA_JhMw_@`AoO_Bi]r@wM~D}MlQ}^|A}N\\}YxA{JpEaLzd@ct@x]si@tCiFbC{Jf@wJq@sLkEmNwXsSqGwNsBsT~Bga@lFwSpUqb@pCaGzd@ixAzGe]dKuoAd@{HPm^iBgq@mQmyG@eVbDk^bBqNfCcKlTck@rEgLxQ}\\pAyBvTq[lAcBtVc\\tUq\\pY{a@bQgXzEuSp@uTaAm\\kCqt@gBoKoFaK{LqIg[iOyVoNiHkIuDeQI}HvJm[`MeJnOgHhMoFdOcAxd@kTpb@eQhF{Bt`@cH|EmA|LgJ~IkKlRqSjI{Bbe@`Jpn@~MdM|BtGk@pTyJ|KkAlPqBr[}OhFyAx[R|Ja@f\\sGlA]~PgJbIyBn_@Z|Wh@rOiA~WqC|XEvIaCxIqFxQqHfjBcIbOoBbJcGvRaWp]{k@pQu`@pHqN`Sm^zDmI|IeKpPuFxPnA|M|BdLu@v^yP|PcIv\\{JhP{Ft[mVlOkKb[eJxd@iMlHqDl[yY`UoThi@kp@fOeQnGaEl`@qNb`@gN~G}ChYsb@bL}PpOcMhMcD`\\u@lH[n_@gMzLeDhGvB`HxL|C~[hCfZzEpPpL|Gx]nBbG}AjKoNtIsF~]X~CKfXcGzPtFlTbPrL|AxLlFbSqFnT|C~SaH~[lBlEAtM}FzOoP`Ly@zDiBdUaWfH_FbZ}DzT{E|NdAtFoC`Oaa@vMgT~EeRvDaEvEaAtNHb[ePbAStOFlIIbFwB~McThFiDbHWnLzCbGi@jUoKbFgEbGyLvGo\\~AgErEeHfH{EtGmAll@l@zYhIrJDrFiBlFkE|Qca@`JcJfLiBvT|FjMAjSs@hQDv]jJpAPpL[~GgFxUi\\jJkDlUNlEjErB|GnBvRtEbKtUhP|KtEfKrKhJ|AzSgGbIZ`EbCtKhNjF~Cf_@~E~OpBx`@tN|VfJlHvFlJpT~HfI|FnBdTlAvYtA|[tS~@^r[~Cv[hVfApAnDxIfDvUzBhGbSzRnDvHh@lMiEdTFjMxIvStKnFlEfHvBjP?bUOxTdB`RvJdPjHnUfAzJNpY~AjJfFtJrOpIlFxHfIv_@fG`ZfOnYvC`JjG|\\xFrY`Dzl@tF`]bC~[pBj]Dd]b@dHxD|O`EbFxGj@rcA{WzG{ApFOpR~BtJgBjNsH~L{L~R_DvH{ElWi^|Xa\\xXy\\zIsIzLkFfX{CjZeO|f@yMpUuHp`@}Bz[eBvKYzRrBz^R~K`@zZ~Ex\\xIt@\\bShS~LjObJ|WzDtFlM~LdSlFvSZ~RqGtFyDnKcQbIiEpH[zMbC~JHd\\{GjG{AlLLpDoB~WmYhRcEjKm@hPoIdF}IpImY~[}i@dLeX`SkTz[yQnRcL|SuAhTgJfNiCrPpEzMuAvHqAvRyOvGJ|CtChFjMvQbSxZlTh[jQ`[bBdEo@hDoCdRi]zImP|K{RlJcI~b@uQflAug@`fAgd@v`@{Pn|B_aAz{Bo`AzJ_@vXbNbUxAxG}AjKuGl[qE~N{Gh]uQtIeQbDa_@lAsLtLm[vEyOdFqi@nBiP~EmPrK}PfJ}GtPeEp`AInKp@tHdCb_@rQrHTzKgDtHgIfNq[~E}LfHw[nBoHjHgShOy[hEoTtCyKhP_^|KmTbJ}Vl_@s]tGaGrM_NxM{YfMwS`ZmUlSaTvPg[rDeHbJ}YxHy]`Gk\\rCyKvQc\\tEsKbGu\\hGu\\tEiV`Kk[pAiDrRs\\`AeBpPo`@`MeT|Jq[zPaVjKq[bZa^|Py\\pGoLdLo\\nDwIhOoZdLeZ~G}TlGuZpLgZ|G{[VeA~Me]bCuGjLqa@|ImWjUeU~F}MnBcN~Bs`@`BgOdGs[tIwb@vAaG|Js\\bIo[xLc[f@{A~R}r@bGu^rBsKpDqIpMeS|L_f@dDgKdFuJnGeHb^oShPeJvM}GnEkIfAqIu@}h@x@{LjXw~@xXu~@nXu~@tKe^rWg|@x\\yiAxKm^fKw]fKe]rb@ywArKy]lLw`@|Jm\\lNm]|Sg\\z[gZ~CcClMgOfPg]fJiSr\\ou@j]cv@~HyWnY{o@jL_\\rH_Sz_@aj@pg@gs@fQyW`D}KdBsOnAcZzAgK`EeOtEeKpWyTz[ab@v^_f@lFaLrCwLlGm[tU}iA`Jyb@dH_]|AoGrFkKp^_^bCcDfCcIj@qLl@sT|@iEnCmEpEsB`Q[hKmGfTmTfDiKVsKgF{Zi@iSn@_K`FaXI}\\rA_LjDqI|EsGxRgJzEsEhPw]nLyW|Ew[bKi\\~A}GpEmi@zC_M|IaLr[{OxKkBjV?nGe@tFuCzGqLlB{OyA{]cAoQbAnQbChQlBlCrFxBxG|@|MgAlr@rPbUnLlTvVnKpHrh@fPdQnDlJ_Cj\\k\\lMoL|L_R|FoFxR}JvCkDxByIAqNy@g\\yAaRx@mMMsOzDw[uCsXXuShBqR`DgJzIkOtAcGPc]AsVhEq`@dImt@[uMcHi\\}Bws@SyD}CyZk@a\\rAi\\`@gIhFs\\\\gCh@eLi@m`@aAa]@iDzAm[zCsk@hCaj@`EqT~HiLvKuGj`@qTzEsDxGyLvLkHdGqRjEi\\pBiJj@{R`DkPiAc[m@{LcCw\\M_A_FcOm@eFl@oW~@_GrNy_@rEkUbFeJnPqKjEaOvCaF~H{@dFtCtHjMbGjEnMpGlKrIbRxE~CnFlFnRjHrGd_@vCboE`\\vmEhYvM_MxFeT~AgWvm@seBlK{pAngEquNnhGijC~{BqcBxiBkxExjActC~gBi_DdyImrPxpKdvAxoB{cF`tBw~FdbBmjDxcCy}CnuAa~Aj|@y}@nrBioCpu@zxBrpDb~KxsEbxCjhCjg@ttGxlDkgDpoKp_EtiLlyIotFf`HekF`iG`|PttGv~EzhImb@~oEcm@jgD|fAj~G}qHfpKqq@|fDBz}HsnK~nBeRxyBg^h|@}n@|o@``Ahl@}r@j`A_lFrvC}wL
+    TrainOffers:
+      description: offers for different comfort classes of a train
+      type: object
+      properties:
+        departure:
+          description: departure date and time
+          type: string
+          format: date-time
+          example: '2023-06-25T00:12:00+02:00'
+        arrival:
+          description: arrival date and time
+          type: string
+          format: date-time
+          example: '2023-06-25T09:43:00+02:00'
+        bestOffers:
+          description: |-
+            best available offers for different comfort classes:
+            - be = sleeping car
+            - le = couchette
+            - se = seats
+          type: object
+          properties:
+            be:
+              $ref: '#/components/schemas/Ticket'
+            le:
+              $ref: '#/components/schemas/Ticket'
+            se:
+              $ref: '#/components/schemas/Ticket'
+    TrainRelation:
+      description: general train data
+      type: object
+      properties:
+        trainNumber:
+          description: train type and number
+          type: string
+          example: NJ 40490
+        date:
+          description: journey date (YYYY-MM-DD)
+          type: string
+          format: date
+          example: 2023-08-31
+        stationFrom:
+          $ref: '#/components/schemas/Station'
+        stationTo:
+          $ref: '#/components/schemas/Station'
+        carTransport:
+          description: possibility to transport car abord the train
+          type: boolean
+          example: false
+        partnerTrain:
+          description: train operator differs from ÖBB
+          type: boolean
+          example: false
