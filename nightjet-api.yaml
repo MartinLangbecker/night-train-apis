@@ -6,6 +6,34 @@ servers:
   - url: https://www.nightjet.com/nj-booking
     description: nightjet.com API
 paths:
+  /init/start:
+    post:
+      tags:
+        - Initialize
+      summary: Get base URLs and i18n data.
+      requestBody:
+        $ref: '#/components/requestBodies/InitRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitResponse'
+  /init/token:
+    post:
+      tags:
+        - Initialize
+      summary: Get auth token.
+      requestBody:
+        $ref: '#/components/requestBodies/TokenRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
   /stations/get:
     get:
       tags:
@@ -508,7 +536,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /offer/get:
+    post:
+      tags:
+        - Offer
+      summary: Get offers for search parameters
+      parameters:
+        - in: header
+          name: credentials
+          schema:
+            type: string
+          required: true
+          example: include
+        - in: header
+          name: CSRF-Token
+          schema:
+            type: string
+          required: true
+          example: b69890ae7be948b1836d1a6d6798d0e9
+      requestBody:
+        $ref: '#/components/requestBodies/OfferRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferResponse'
 components:
+  requestBodies:
+    InitRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InitRequest'
+    OfferRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OfferRequest'
+    TokenRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TokenRequest'
   schemas:
     Connection:
       description: contains search results for connection between two train stations
@@ -713,6 +787,166 @@ components:
                     description: embedded object
                     type: object
                     example: {}
+    InitRequest:
+      description: JSON object specifying language with which to initialize homepage
+      type: object
+      properties:
+        lang:
+          description: requested language
+          type: string
+          enum: [de, en, it, nl, fr]
+          example: de
+    InitResponse:
+      description: JSON object containing base URLs and i18n data for requested language
+      type: object
+      properties:
+        publicId:
+          description: Client ID (?)
+          type: string
+          example: 2a05e170371f42f18a69737598cd1b0a
+        ticketUrl:
+          description: URL of personal ticket page
+          type: string
+          example: https://www.nightjet.com/de/mein-ticket/#/ticket?t=
+        bookingUrl:
+          description: URL of booking page
+          type: string
+          example: https://www.nightjet.com/de/ticket-buchen/#/home
+        i18nData:
+          description: i18n data for all available languages (FIXME add object properties)
+          type: object
+        enabledPaymentMethods:
+          description: enabled payment methods (possibly incomplete)
+          type: string
+          enum: [CREDIT_CARD, PAYPAL, EPS]
+          example: PAYPAL
+        useAgbCheckbox:
+          description: TODO
+          type: boolean
+          example: true
+        ervEnabled:
+          description: TODO
+          type: boolean
+          example: false
+        magnoliaBaseUrl:
+          description: TODO
+          type: string
+          example: https://www.nightjet.com/.rest
+        maxBookableDate:
+          description: end of current booking period
+          type: string
+          format: date
+          example: 2024-04-10
+    ObjectsEntry:
+      description: passenger details used for offer search
+      type: object
+      properties:
+        birthDate:
+          description: birth date of passenger; default to current date minus 30 years
+          type: string
+          format: date
+          example: 1993-10-13
+        cards:
+          description: specified discount cards TODO add entries
+          type: array
+          example: []
+        gender:
+          description: gender of passenger; defaults to "male"
+          type: string
+          example: male
+        type:
+          description: passenger type; defaults to "person" TODO create enum
+          type: string
+          example: person
+    OfferFilter:
+      description: search filter for offer
+      type: object
+      properties:
+        njTrain:
+          description: train type and number, separated with a space
+          type: string
+          example: NJ 40491
+        njDeparture:
+          description: departure time as UNIX timestamp in milliseconds
+          type: number
+          example: 1697221440000
+    OfferRequest:
+      description: JSON object containing search parameters
+      type: object
+      properties:
+        njFrom:
+          description: 7-digit EVA number of departure station
+          type: number
+          example: 8002549
+        njDep:
+          description: departure time as UNIX timestamp in milliseconds
+          type: number
+          example: 1697307840000
+        njTo:
+          description: 7-digit EVA number of arrival station
+          type: number
+          example: 8100099
+        maxChanges:
+          description: maximum number of changes between trains
+          type: number
+          example: 0
+        filter:
+          $ref: '#/components/schemas/OfferFilter'
+        objects:
+          description: passenger list TODO add more details regarding possible entries
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectsEntry'
+        relations:
+          description: TODO find meaning and example
+          type: array
+          example: []
+        lang:
+          description: requested language
+          type: string
+          enum: [de, en, it, nl, fr]
+          example: de
+    OfferResponse:
+      description: JSON object containing offers
+      type: object
+      properties:
+        ok:
+          description: indicates whether request was successful
+          type: boolean
+          example: true
+        responseCode:
+          description: HTTP response code of request
+          type: number
+          example: 200
+        result:
+          description: list of offers matching search parameters
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferResultEntry'
+    OfferResultConnection:
+      description: JSON object holding detail information about connection in offer result TODO add properties
+      type: object
+    OfferResultEntry:
+      description: JSON object holding detail information about offer result
+      type: object
+      properties:
+        connections:
+          description: list of connections matching search parameters
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferResultConnection'
+        filter:
+          description: applied search filter
+          type: object
+          properties:
+            maxTrainChanges:
+              description: maximum number of train changes
+              type: number
+              example: 0
+        rfpIndex:
+          description: TODO
+          type: number
+          example: 0
     Station:
       description: train station data
       type: object
@@ -830,6 +1064,31 @@ components:
           description: ticket price in Euro (€)
           type: number
           example: 115.4
+    TokenRequest:
+      description: JSON object specifying language and token action
+      type: object
+      properties:
+        action:
+          description: action to execute at token endpoint
+          type: string
+          example: get
+        lang:
+          description: requested language
+          type: string
+          enum: [de, en, it, nl, fr]
+          example: de
+    TokenResponse:
+      description: JSON object holding CSRF-Token
+      type: object
+      properties:
+        CSRF-Token:
+          description: CSRF-Token
+          type: string
+          example: 9be3a182fdee406b9ede814fd2c068b5
+        isNew:
+          description: specified whether token is new (or refreshed existing one?)
+          type: boolean
+          example: true
     TrainDetails:
       description: details regarding train operation
       type: object
