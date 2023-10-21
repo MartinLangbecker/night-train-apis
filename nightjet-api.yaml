@@ -10,7 +10,15 @@ paths:
     post:
       tags:
         - Initialize
-      summary: Get base URLs and i18n data.
+      summary: Initialize base data.
+      description: Get public ID, base URLs, enabled payment methods, max booking date, and i18n data.
+      parameters:
+        - in: header
+          name: Referer
+          schema:
+            type: string
+          required: true
+          example: https://www.nightjet.com/
       requestBody:
         $ref: '#/components/requestBodies/InitRequest'
       responses:
@@ -24,7 +32,15 @@ paths:
     post:
       tags:
         - Initialize
-      summary: Get auth token.
+      summary: Get CSRF token.
+      description: Request new CSRF token or retrieve existing one.
+      parameters:
+        - in: header
+          name: Referer
+          schema:
+            type: string
+          required: true
+          example: https://www.nightjet.com/de/ticket-buchen/
       requestBody:
         $ref: '#/components/requestBodies/TokenRequest'
       responses:
@@ -142,6 +158,12 @@ paths:
           required: true
           description: 7-digit EVA number of train station 
           example: 8010101
+        - name: carTransport
+          in: query
+          schema:
+            type: boolean
+          description: Indicate whether train should offer car transport.
+          example: true
       responses:
         '200':
           description: OK
@@ -196,6 +218,12 @@ paths:
           required: true
           description: 2-digit UIC country code
           example: 80
+        - name: carTransport
+          in: query
+          schema:
+            type: boolean
+          description: Indicate whether train should offer car transport.
+          example: true
       responses:
         '200':
           description: OK
@@ -209,7 +237,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /destinations/country/{uicFrom}/country/{uicTo}/{date}:
+  /destinations/country/{uicFrom}/country/{uicTo}/{travelDate}:
     get:
       tags:
         - Destinations
@@ -236,13 +264,19 @@ paths:
           description: 2-digit UIC country code of arrival country
           example: 81
         - in: path
-          name: date
+          name: travelDate
           schema:
             type: string
             format: date
           required: true
-          description: journey date (YYYY-MM-DD)
+          description: travel date (YYYY-MM-DD)
           example: 2023-08-31
+        - name: carTransport
+          in: query
+          schema:
+            type: boolean
+          description: Indicate whether train should offer car transport.
+          example: true
       responses:
         '200':
           description: OK
@@ -256,7 +290,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /destinations/country/{uicFrom}/station/{evaTo}/{date}:
+  /destinations/country/{uicFrom}/station/{evaTo}/{travelDate}:
     get:
       tags:
         - Destinations
@@ -283,13 +317,19 @@ paths:
           description: 7-digit EVA number of arrival train station
           example: 8010101
         - in: path
-          name: date
+          name: travelDate
           schema:
             type: string
             format: date
           required: true
-          description: journey date (YYYY-MM-DD)
+          description: travel date (YYYY-MM-DD)
           example: 2023-08-31
+        - name: carTransport
+          in: query
+          schema:
+            type: boolean
+          description: Indicate whether train should offer car transport.
+          example: true
       responses:
         '200':
           description: OK
@@ -303,7 +343,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /destinations/station/{evaFrom}/country/{uicTo}/{date}:
+  /destinations/station/{evaFrom}/country/{uicTo}/{travelDate}:
     get:
       tags:
         - Destinations
@@ -330,13 +370,19 @@ paths:
           description: 2-digit UIC country code of arrival country
           example: 80
         - in: path
-          name: date
+          name: travelDate
           schema:
             type: string
             format: date
           required: true
-          description: journey date (YYYY-MM-DD)
+          description: travel date (YYYY-MM-DD)
           example: 2023-08-31
+        - name: carTransport
+          in: query
+          schema:
+            type: boolean
+          description: Indicate whether train should offer car transport.
+          example: true
       responses:
         '200':
           description: OK
@@ -350,6 +396,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /destinations/partner/${travelDate}:
+    get:
+      tags:
+        - Destinations
+      summary: Train Relation Search (Station -> Country)
+      description: |-
+        Returns a list of night train connections from a station to a country on a given date.
+      parameters:
+        - in: path
+          name: travelDate
+          schema:
+            type: string
+            format: date
+          required: true
+          description: journey date (YYYY-MM-DD)
+          example: 2023-08-31
+        - name: carTransport
+          in: query
+          schema:
+            type: boolean
+          description: Indicate whether train should offer car transport.
+          example: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainRelationList'
   /destinations/train/{trainName}/{date}:
     get:
       tags:
@@ -1207,3 +1282,8 @@ components:
           description: train operator differs from ÖBB
           type: boolean
           example: false
+    TrainRelationList:
+      description: list of train relations
+      type: array
+      items:
+        $ref: '#/components/schemas/TrainRelation'
