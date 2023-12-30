@@ -924,15 +924,22 @@ components:
         cards:
           description: specified discount cards TODO add entries
           type: array
-          example: []
+          items:
+            type: number
+          example: [127]
         gender:
           description: gender of passenger; defaults to "male"
           type: string
+          enum: [male, female, diverse]
           example: male
         type:
-          description: passenger type; defaults to "person" TODO create enum
+          description: passenger type; defaults to "person" TODO finalize enum
           type: string
+          enum: [person, challenged, dog]
           example: person
+    OfferDetails:
+      description: TODO JSON object holding detail information about price, class, validity, etc. of current offer
+      type: object
     OfferFilter:
       description: search filter for offer
       type: object
@@ -945,22 +952,44 @@ components:
           description: departure time as UNIX timestamp in milliseconds
           type: number
           example: 1697221440000
+        # njRoute: list of stations to be passed by NightJet
+        # njProduct: this.product.apiProduct.productDetails[0].title
+        # njCompartment: this.product.compartment
+        # privateVariationCount: this.product.privateVariationCount
     OfferRequest:
       description: JSON object containing search parameters
       type: object
       properties:
         njFrom:
-          description: 7-digit EVA number of departure station
+          description: 7-digit EVA number of departure station of night train
           type: number
           example: 8002549
+        njArr:
+          description: arrival time as UNIX timestamp in milliseconds
+          type: number
+          example: 1697307840000
         njDep:
           description: departure time as UNIX timestamp in milliseconds
           type: number
           example: 1697307840000
         njTo:
-          description: 7-digit EVA number of arrival station
+          description: 7-digit EVA number of arrival station of night train
           type: number
           example: 8100099
+        finalFrom:
+          description: |-
+            7-digit EVA number of departure station of entire journey;
+            only used if connection leading up to night train is included in booking
+          type: number
+          nullable: true
+          example: 8000199
+        finalTo:
+          description: |-
+            7-digit EVA number of arrival station of entire journey;
+            only used if connection following night train is included in booking
+          type: number
+          nullable: true
+          example: 5696001
         maxChanges:
           description: maximum number of changes between trains
           type: number
@@ -973,9 +1002,10 @@ components:
           items:
             $ref: '#/components/schemas/ObjectsEntry'
         relations:
-          description: TODO find meaning and example
+          description: list of special relations between passengers
           type: array
-          example: []
+          items:
+            $ref: '#/components/schemas/Relation'
         lang:
           description: requested language
           type: string
@@ -999,8 +1029,23 @@ components:
           items:
             $ref: '#/components/schemas/OfferResultEntry'
     OfferResultConnection:
-      description: JSON object holding detail information about connection in offer result TODO add properties
+      description: JSON object holding detail information about connection in offer result
       type: object
+      properties:
+        njIndex:
+          description: index of NightJet section in list "sections"
+          type: number
+          example: 1
+        offers:
+          description: list of objects containing price, class, validity, etc. details of current offer(s)
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferDetails'
+        sections:
+          description: list of objects representing train sections of current connection
+          type: array
+          items:
+            $ref: '#/components/schemas/Section'
     OfferResultEntry:
       description: JSON object holding detail information about offer result
       type: object
@@ -1022,6 +1067,28 @@ components:
           description: TODO
           type: number
           example: 0
+    Relation:
+      description: |-
+        indicates relationship of one passenger to another, e. g., attendant of a dog or PRM;
+        read as "\<lhs> \<relationType> \<rhs>";
+        e. g. "object with index 1 in passenger list is attendant of object with index 0 in passenger list"
+      type: object
+      properties:
+        lhs:
+          description: index of object in passenger list on left hand side of the relation
+          type: number
+          example: 1
+        relationType:
+          description: type of relation
+          type: string
+          example: attendant_of
+        rhs:
+          description: index of object in passenger list on right hand side of the relation
+          type: number
+          example: 0
+    Section:
+      description: TODO JSON object holding detail information about a train section within the current connection
+      type: object
     Station:
       description: train station data
       type: object
