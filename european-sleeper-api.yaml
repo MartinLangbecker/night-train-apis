@@ -326,11 +326,11 @@ components:
           example: 77ab1c5a-ea0b-4634-7cdd-08db0daabe3f
         fromLocationId:
           description: 7-digit EVA number of departure station
-          type: object
+          type: string
           example: 8800104
         toLocationId:
           description: 7-digit EVA number arrival departure station
-          type: object
+          type: string
           example: 8010100
         passengerTypes:
           description: |-
