@@ -3,7 +3,7 @@ info:
   title: NightJet API
   version: 1.0.0
 servers:
-  - url: https://www.nightjet.com/nj-booking
+  - url: https://www.nightjet.com/nj-booking-ocp
     description: nightjet.com API
 paths:
   /init/start:
@@ -162,7 +162,7 @@ paths:
       summary: Country <-> Country Search
       description: |-
         Returns a list of objects containing information about countries with currently existing and operating night train connections to/from the requested country.
-        
+
         Possible values for UIC country codes currently include (as of June 2023):
         - 51 (Poland)
         - 54 (Czechia)
@@ -177,7 +177,7 @@ paths:
         - 85 (Switzerland)
         - 87 (France)
         - 88 (Belgium)
-        
+
         Other valid UIC country codes return 200 OK with an empty list in the response body.
       parameters:
         - in: path
@@ -374,7 +374,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /destinations/partner/${travelDate}:
+  /destinations/partner/{travelDate}:
     get:
       tags:
         - Destinations
@@ -394,7 +394,7 @@ paths:
           in: query
           schema:
             type: boolean
-          description: Indicate whether train should offer car transport.
+          description: Indicate whether train must offer car transport ("false" may also return trains with car transport).
           example: true
       responses:
         '200':
@@ -573,7 +573,7 @@ paths:
             type: string
           description: |-
             2-letter UIC country code which changes localization of formatted date strings containing day of week and month (default: en)
-            
+
             Note: This does not change train station names contained in response!
           example: de
       responses:
@@ -877,7 +877,7 @@ components:
         magnoliaBaseUrl:
           description: TODO
           type: string
-          example: https://www.nightjet.com/.rest
+          example: https://www.nightjet.com
         maxBookableDate:
           description: end of current booking period
           type: string
@@ -923,10 +923,21 @@ components:
           description: departure time as UNIX timestamp in milliseconds
           type: number
           example: 1697221440000
-        # njRoute: list of stations to be passed by NightJet
-        # njProduct: this.product.apiProduct.productDetails[0].title
+        njRoute:
+          description: list of stations to be passed along the route
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteEntry'
+        njProduct:
+          description: official ticket title
+          type: string
+          example: ARES Sparschiene Nachtverkehr
         # njCompartment: this.product.compartment
-        # privateVariationCount: this.product.privateVariationCount
+        privateVariationCount:
+          description: TODO
+          type: object
+          nullable: true
+          example: null
     OfferRequest:
       description: JSON object containing search parameters
       type: object
@@ -936,7 +947,9 @@ components:
           type: number
           example: 8002549
         njArr:
-          description: arrival time as UNIX timestamp in milliseconds
+          description: |-
+            arrival time as UNIX timestamp in milliseconds;
+            only used if connection leading up to night train is included in booking
           type: number
           example: 1697307840000
         njDep:
@@ -1057,6 +1070,67 @@ components:
           description: index of object in passenger list on right hand side of the relation
           type: number
           example: 0
+    RouteEntry:
+      description: details of station along a given route
+      type: object
+      properties:
+        arrival:
+          description: |-
+            arrival time at station; not passed at first station of route
+          type: string
+          format: date-time
+          example: '2024-06-20T20:21:00+02:00'
+        arrivalAccessExitAmendable:
+          description: TODO
+          type: boolean
+          example: true
+        arrivalPlatform:
+          description: arrival platform of train; only used if platform is known/available
+          type: string
+          example: 3
+        departure:
+          description: |-
+            departure time from station; not passed at last station of route
+          type: string
+          format: date-time
+          example: '2024-06-20T20:21:00+02:00'
+        departureAccessExitAmendable:
+          description: TODO
+          type: boolean
+          example: true
+        departurePlatform:
+          description: departure platform of train; only used if platform is known/available
+          type: string
+          example: 3
+        departurePlatformRT:
+          description: TODO; only used if platform is known/available
+          type: string
+          example: 3
+        gpsCoordinates:
+          description: |-
+            list containing latitude (first entry) and longitude (second entry) of station;
+            entries contain six decimal places, therefore divide each entry by 1,000,000 to get coordinate
+          type: array
+          items:
+            type: integer
+            minItems: 2
+            maxItems: 2
+          example: [ 53455910, 9991699 ]
+        name:
+          description: station name
+          type: string
+          example: Hamburg-Harburg
+        stationNumber:
+          description: 7-digit EVA number of station
+          type: integer
+          minimum: 1000001
+          maximum: 9999999
+          example: 8000147
+        stopState:
+          description: current status of departure and arrival times (?); possibly incomplete
+          type: string
+          enum: [ DEP_PROGNOSED, ARR_PROGNOSED, DEP_CALCULATED, ARR_CALCULATED ]
+          example:
     Section:
       description: TODO JSON object holding detail information about a train section within the current connection
       type: object
