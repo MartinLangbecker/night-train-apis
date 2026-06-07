@@ -1,15 +1,215 @@
-openapi: 3.0.0
+﻿openapi: 3.0.0
 info:
   title: European Sleeper API
   version: 1.0.0
 servers:
   - url: https://europeansleeperprod-api.azurewebsites.net/api
 paths:
+  /constants:
+    get:
+      tags:
+        - Configuration
+      summary: Get Constants
+      operationId: getConstants
+      description: |-
+        Returns complete system configuration including all stations, routes, passenger types,
+        pricing, and booking settings. Does not require authentication.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    type: object
+                    properties:
+                      bookingFlowState:
+                        type: integer
+                        example: 2
+                      bookingFlowEnabled:
+                        type: boolean
+                        example: true
+                      bookingFlowMessageType:
+                        type: integer
+                        example: 0
+                      maxReservationDate:
+                        type: string
+                        format: date
+                        example: '2027-01-03'
+                      bicycleReservationDates:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            start:
+                              type: string
+                              format: date
+                            end:
+                              type: string
+                              format: date
+                      maxPetsAmountPerTrip:
+                        type: integer
+                        example: 2
+                      petsEnabled:
+                        type: boolean
+                        example: true
+                  domesticJourneyDisabledCountries:
+                    description: UIC country codes where domestic journeys cannot be booked
+                    type: array
+                    items:
+                      type: string
+                    example: ["84", "88", "54", "87", "85", "83"]
+                  stations:
+                    description: all stations grouped by country
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        country:
+                          type: string
+                          example: "84"
+                        countryName:
+                          type: string
+                          example: NEDERLAND
+                        stations:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                description: EVA number
+                                type: string
+                                example: "8400058"
+                              name:
+                                type: string
+                                example: Amsterdam CS
+                              nsName:
+                                description: NS (Dutch railways) station name
+                                type: string
+                                nullable: true
+                                example: AMSTERDAM C.
+                              uicCode:
+                                type: string
+                                example: "8400058"
+                              countryId:
+                                type: string
+                              country:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                                  name:
+                                    type: string
+                                  railwayCompanyAbbreviation:
+                                    type: string
+                                    example: NS
+                  passengerTypes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: integer
+                          example: 72
+                        value:
+                          type: string
+                          example: Adult
+                  defaultPassengerType:
+                    type: integer
+                    example: 72
+                  maxPassengerAmount:
+                    type: integer
+                    example: 5
+                  maxTripsPerBooking:
+                    type: integer
+                    example: 4
+                  supplementTypes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: integer
+                        value:
+                          type: string
+                    example: [{"key": 0, "value": "Bicycle"}, {"key": 1, "value": "Pet"}]
+                  maxBicycleAmount:
+                    type: integer
+                    example: 5
+                  pricesBreakfastInCents:
+                    description: breakfast price in cents per currency
+                    type: object
+                    properties:
+                      eur:
+                        type: integer
+                        example: 1400
+                      czk:
+                        type: integer
+                      gbp:
+                        type: integer
+                      jpy:
+                        type: integer
+                      usd:
+                        type: integer
+                  pricesPetsInCents:
+                    description: pet surcharge in cents per currency
+                    type: object
+                    properties:
+                      eur:
+                        type: integer
+                        example: 2999
+                      czk:
+                        type: integer
+                      gbp:
+                        type: integer
+                      jpy:
+                        type: integer
+                      usd:
+                        type: integer
+                  routes:
+                    description: available routes with station lists and validity periods
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          example: 77ab1c5a-ea0b-4634-7cdd-08db0daabe3f
+                        from:
+                          description: route active from date
+                          type: string
+                          format: date-time
+                        until:
+                          description: route active until date (null = indefinite)
+                          type: string
+                          format: date-time
+                          nullable: true
+                        stations:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                description: EVA number
+                                type: string
+                              from:
+                                description: station active on route from date (null = always)
+                                type: string
+                                format: date-time
+                                nullable: true
+                              mappedStationId:
+                                description: actual boarding station if this is a virtual/grouped stop (null = boards here)
+                                type: string
+                                nullable: true
   /search/trains:
     post:
       tags:
         - Search
       summary: Train Search
+      operationId: searchTrains
       requestBody:
         $ref: '#/components/requestBodies/TrainSearchRequest'
       responses:
@@ -24,6 +224,7 @@ paths:
       tags:
         - Search
       summary: Availability Search
+      operationId: searchAvailability
       parameters:
         - name: lang
           in: query
@@ -66,6 +267,7 @@ paths:
       tags:
         - Booking
       summary: Create Booking
+      operationId: bookingUpsert
       description: |-
         Creates or updates booking with personal information and reservation request, including route, passenger, and bicycle information.
         
@@ -92,6 +294,7 @@ paths:
       tags:
         - Booking
       summary: Booking Status
+      operationId: getBookingAuthenticated
       description: Request current booking status
       parameters:
         - in: path
@@ -113,8 +316,12 @@ paths:
     post:
       tags:
         - Booking
-      summary: Checkout
-      description: Returns a link to the checkout page for requested booking.
+      summary: Start Checkout
+      operationId: startCheckout
+      description: |-
+        Initiates payment session with Pay.nl. Empty request body, empty response body.
+        After this call, the frontend redirects to `https://checkout.pay.nl/to/order/{orderId}`.
+        Payment provider: Pay.nl (Dutch PSP). Status polled via Pay.nl API.
       parameters:
         - name: lang
           in: query
@@ -122,32 +329,30 @@ paths:
             type: string
             enum: [de-DE, en-GB, nl-NL, fr-FR]
           description: locale
-          example: de-DE
+          example: en-GB
+        - name: currency
+          in: query
+          schema:
+            type: integer
+            enum: [1, 2, 3, 4, 5]
+          description: |-
+            currency selection (1=EUR, 2=CZK, 3=GBP, 4=JPY, 5=USD)
+          example: 1
         - name: bookingId
           in: query
           schema:
             type: string
             format: uuid
-          description: UUID
-          example: 44c5d6b2-538a-4fac-c9ef-08db71bc1c52
+          required: true
       responses:
         '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  checkoutUrl:
-                    description: URL to checkout page
-                    type: string
-                    format: uri
-                    example: https://www.mollie.com/checkout/select-method/HgAx7Xnsqh
+          description: Empty response body. Payment redirect handled client-side via Pay.nl.
   /booking/status:
     get:
       tags:
         - Booking
       summary: Booking Payment Status
+      operationId: bookingStatus
       description: Returns an object containing payment status for requested booking.
       parameters:
         - name: bookingId
@@ -181,6 +386,7 @@ paths:
       tags:
         - Booking
       summary: Cancel Booking (Before Payment Initiation)
+      operationId: cancelUnpaidBooking
       description: Cancel existing booking before initiation of payment.
       parameters:
         - name: bookingId
@@ -228,6 +434,7 @@ paths:
       tags:
         - Booking
       summary: Cancel Booking (After Payment Initiation)
+      operationId: cancelTrip
       description: |-
         Cancel existing booking after initiation of payment, but before payment is specified and processed.
       parameters:
@@ -432,7 +639,9 @@ components:
           type: string
           example: GWL5-MHPC
         state:
-          description: booking state # TODO possible values? semantics?
+          description: |-
+            booking state as integer;
+            observed value: 0 (likely represents active/pending; other values undocumented)
           type: integer
           minimum: 0
           example: 0
@@ -447,7 +656,7 @@ components:
           items:
             $ref: '#/components/schemas/BookingTripDetails'
         isPartnerBooking:
-          description: is partner booking # TODO meaning? possibly night train of different operator, e. g. ÖBB?
+          description: whether this booking is for a partner operator's train (e.g. ÖBB NightJet); always false for European Sleeper direct bookings
           type: boolean
           example: false
     BookingTripDetails:
@@ -604,30 +813,39 @@ components:
                 type: string
                 example: Interrail and non-interrail cannot be mixed
     FareType:
-      description: type of fare, including name, price, and availability
+      description: fare level with pricing and availability
       type: object
       nullable: true
       properties:
         id:
-          description: |-
-            name of ticket / fare level; Interrail / Eurail may only book good-night (?)
+          description: fare level identifier
           type: string
           enum: [easy-night, good-night, flex-night]
           example: easy-night
         bookable:
           description: indicates whether this fare is bookable
           type: boolean
-          example: false
+          example: true
         availableSeats:
-          description: number of available seats/places for specified comfort level and fare
+          description: number of available seats/places for this fare
           type: integer
           minimum: 0
-          example: 0
-        price:
-          description: price in Euro (€) for specified comfort level and fare
-          type: integer
-          minimum: 0
-          example: 129
+          example: 110
+        prices:
+          description: price per currency (major units)
+          type: object
+          properties:
+            eur:
+              type: number
+              example: 119.99
+            czk:
+              type: number
+            gbp:
+              type: number
+            jpy:
+              type: number
+            usd:
+              type: number
     Line:
       description: information about train line; not yet implemented?
       type: object
@@ -643,18 +861,18 @@ components:
           minimum: 0
           example: 0
         code:
-          description: code # TODO meaning? not yet implemented?
-          type: string # TODO verify
+          description: line code (not yet in use; always null in observed responses)
+          type: string
           nullable: true
           example: null
         from:
-          description: from # TODO possibly departureStationId of start of line, not yet implemented?
-          type: string # TODO verify
+          description: start station of line (not yet in use; always null in observed responses)
+          type: string
           nullable: true
           example: null
         to:
-          description: to # TODO possibly arrivalstationStationId of end of line, not yet implemented?
-          type: string # TODO verify
+          description: end station of line (not yet in use; always null in observed responses)
+          type: string
           nullable: true
           example: null
     Passenger:
@@ -722,7 +940,7 @@ components:
             - 73 = Child (4-11 years old):
             - 87 = 1 Adult, 1 Child, Booker did not travel
           type: integer
-          # enum: [44, 64, 72, 73, 87] TODO add back in once list is considered complete
+          enum: [44, 64, 72, 73, 87]
           example: 72
         coachNumber:
           description: number of train car housing reserved seat/place
@@ -772,33 +990,54 @@ components:
       type: object
       properties:
         placeTypeKey:
-          description: name of price class
+          description: accommodation type identifier
           type: string
-          enum: [seat-second-class, seat-second-class-private, couchette-4, couchette-6, couchette-6-private, couchette-4-women-only, berth-single, berth-double, berth-triple, berth-triple-women-only]
-          example: seat-second-class
-        placeTypeIcon: 
+          enum:
+            - seat-second-class
+            - couchette-5
+            - couchette-5-women-only
+            - couchette-5-private
+            - berth-single
+            - berth-double
+            - berth-triple
+            - berth-triple-women-only
+            - comfort-single
+            - comfort-double
+            - comfort-triple
+            - comfort-triple-women-only
+          example: couchette-5
+        placeTypeIcon:
           description: |-
-            icon type; observed use:
-            - 1 = couchette-6-private
-            - 2 = seat-second-class
-            - 3 = seat-second-class-private
-            - 0 = other price classes
+            icon type:
+            - 0 = shared bed/couchette
+            - 1 = private compartment
+            - 2 = seat
           type: integer
-          example: 2
+          example: 0
         freeSeatsCount:
           description: number of total free seats in price category
           type: integer
           nullable: true
           minimum: 0
-          example: 42
-        price:
-          description: price for cheapest available fare in price category in Euro (€)
-          type: integer
+          example: 110
+        prices:
+          description: cheapest price per currency (in major units, e.g. EUR not cents)
+          type: object
           nullable: true
-          minimum: 0
-          example: 79
+          properties:
+            eur:
+              type: number
+              example: 119.99
+            czk:
+              type: number
+            gbp:
+              type: number
+            jpy:
+              type: number
+            usd:
+              type: number
         fareTypes:
-          description: list of objects containing different fare types
+          description: available fare types with per-fare pricing and availability
           type: array
           items:
             $ref: '#/components/schemas/FareType'
@@ -839,6 +1078,16 @@ components:
               maxItems: 2
               items:
                 $ref: '#/components/schemas/ReservationRequestDetails'
+            referralCode:
+              description: referral discount code
+              type: string
+              nullable: true
+              example: null
+        anonymousId:
+          description: anonymous tracking ID (analytics)
+          type: string
+          nullable: true
+          example: null
     ReservationRequestDetails:
       description: reservation request details
       type: object
@@ -856,6 +1105,16 @@ components:
           type: integer
           minimum: 0
           maximum: 6
+          example: 0
+        breakfastCount:
+          description: number of breakfast add-ons
+          type: integer
+          minimum: 0
+          example: 0
+        petCount:
+          description: number of pets (private compartment only, max 2)
+          type: integer
+          minimum: 0
           example: 0
     Route:
       description: route details
@@ -883,15 +1142,27 @@ components:
                 section:
                   $ref: '#/components/schemas/RouteSection'
           placeTypeGroup:
-            description: requested comfort class
+            description: requested comfort class group
             type: string
-            enum: [seat, couchette, berth]
-            example: couchette
+            enum: [seat, couchette, berth, comfort]
+            example: berth
           placeType:
             description: requested sub-category of comfort class
             type: string
-            enum: [seat-second-class, seat-second-class-private, couchette-4, couchette-6, couchette-6-private, couchette-4-women-only, berth-single, berth-double, berth-triple, berth-triple-women-only]
-            example: couchette-6
+            enum:
+              - seat-second-class
+              - couchette-5
+              - couchette-5-women-only
+              - couchette-5-private
+              - berth-single
+              - berth-double
+              - berth-triple
+              - berth-triple-women-only
+              - comfort-single
+              - comfort-double
+              - comfort-triple
+              - comfort-triple-women-only
+            example: berth-triple
           fareType:
             description: requested ticket type
             type: string
@@ -945,8 +1216,8 @@ components:
         line:
           $ref: '#/components/schemas/Line'
         notices:
-          description: notices # TODO enhance description
-          type: string # TODO verify; probably object
+          description: operational notices for this section (not yet in use; always null in observed responses)
+          type: string
           nullable: true
           example: null
         departureStationId:
