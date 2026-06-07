@@ -1,4 +1,4 @@
-openapi: 3.0.0
+﻿openapi: 3.0.0
 info:
   title: NightJet API
   version: 1.0.0
@@ -11,6 +11,7 @@ paths:
       tags:
         - Initialize
       summary: Initialize base data.
+      operationId: initStart
       description: Get public ID, base URLs, enabled payment methods, max booking date, and i18n data.
       parameters:
         - in: header
@@ -33,6 +34,7 @@ paths:
       tags:
         - Stations
       summary: Get Specific Station
+      operationId: stationsGet
       description: Returns a station object for specified EVA number.
       parameters:
         - in: query
@@ -65,6 +67,7 @@ paths:
       tags:
         - Stations
       summary: List Stations
+      operationId: stationsFind
       description: |-
         Returns a list of all stations with NightJet service. Sort and filter list using parameters.
       parameters:
@@ -105,6 +108,12 @@ paths:
             type: integer
           description: UNIX timestamp in milliseconds (ms)
           example: 1693440000000
+        - in: query
+          name: limit
+          schema:
+            type: integer
+          description: maximum number of results to return
+          example: 5
       responses:
         '200':
           description: OK
@@ -160,6 +169,7 @@ paths:
       tags:
         - Countries
       summary: Country <-> Country Search
+      operationId: countriesFromCountry
       description: |-
         Returns a list of objects containing information about countries with currently existing and operating night train connections to/from the requested country.
 
@@ -374,13 +384,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /destinations/dani/{date}:
+    get:
+      tags:
+        - Destinations
+      summary: All NightJet Trains on Date
+      operationId: destinationsDani
+      description: |-
+        Returns a list of all NightJet ("dani") train connections operating on a given date.
+        Replaces the former /destinations/nightjet/{date} endpoint.
+      parameters:
+        - in: path
+          name: date
+          schema:
+            type: string
+            format: date
+          required: true
+          description: journey date (YYYY-MM-DD)
+          example: 2026-07-15
+        - name: carTransport
+          in: query
+          schema:
+            type: boolean
+          description: filter for trains offering car transport
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainRelationList'
   /destinations/partner/{travelDate}:
     get:
       tags:
         - Destinations
-      summary: Train Relation Search (Station -> Country)
+      summary: Partner Train Relations
+      operationId: destinationsPartner
       description: |-
-        Returns a list of night train connections from a station to a country on a given date.
+        Returns a list of partner operator night train connections on a given date (e.g. EuroNight trains operated by other railways).
       parameters:
         - in: path
           name: travelDate
@@ -408,6 +449,7 @@ paths:
       tags:
         - Destinations
       summary: Train Details Search
+      operationId: destinationsTrainDetails
       description: |-
         Returns an object containing details for the specified train and date, including stations and arrival/departure times along the route. Details will be displayed even if no train is running on the specified date (default route data displayed in that case?)
       parameters:
@@ -444,6 +486,7 @@ paths:
       tags:
         - Destinations
       summary: Train Price Search
+      operationId: destinationsOffers
       description: |-
         Returns a list of up to three journeys of a given train between two train stations, containing the cheapest available prices for each comfort class offered.
       parameters:
@@ -511,9 +554,12 @@ paths:
     get:
       tags:
         - Connection
-      summary: Train Connection Search
+      summary: Train Connection Search (DEPRECATED)
+      deprecated: true
       description: |-
-        Find NightJet connections between two stations at a specified date and time. Returns a list of next possible connections with options for sorting and filtering.
+        DEPRECATED: This endpoint returns 404. Replaced by captcha-protected `/connection/{evaFrom}/{evaTo}/{date}`.
+
+        Previously used to find NightJet connections between two stations at a specified date and time.
       parameters:
         - in: path
           name: evaFrom
@@ -594,6 +640,7 @@ paths:
       tags:
         - Offer
       summary: Get offers for search parameters
+      operationId: offerGet
       parameters:
         - in: header
           name: X-Token
@@ -611,6 +658,544 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OfferResponse'
+  /offer-availability/check:
+    post:
+      tags:
+        - Offer
+      summary: Check Offer Availability
+      operationId: offerAvailabilityCheck
+      description: Verifies whether a previously retrieved offer is still available for booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+  /route:
+    post:
+      tags:
+        - Connection
+      summary: Get Route Details
+      operationId: routeGet
+      description: |-
+        Returns detailed route information including station passlist, train attributes, and GPS coordinate polyline for map display.
+        Uses the same Section structure as /offer/get response.
+      parameters:
+        - in: header
+          name: X-Token
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fromStation:
+                  description: EVA number of departure station
+                  type: string
+                  example: '8002549'
+                toStation:
+                  description: EVA number of arrival station
+                  type: string
+                  example: '8103000'
+                departure:
+                  description: departure time (ISO 8601 UTC)
+                  type: string
+                  format: date-time
+                  example: '2026-06-09T17:19:00.000Z'
+                sections:
+                  description: train sections to get route for
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      departure:
+                        type: string
+                        format: date-time
+                      arrival:
+                        type: string
+                        format: date-time
+                      train:
+                        description: train name
+                        type: string
+                        example: NJ 499
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    description: route hash identifier
+                    type: string
+                  sections:
+                    description: sections with passlist, attributes, and polyline coordinates
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/Section'
+                        - type: object
+                          properties:
+                            polyline:
+                              description: GPS coordinates as array of [lat*1000000, lng*1000000] pairs
+                              type: array
+                              items:
+                                type: array
+                                items:
+                                  type: integer
+                                minItems: 2
+                                maxItems: 2
+                            timestampDeparture:
+                              type: string
+                              format: date-time
+                            timestampArrival:
+                              type: string
+                              format: date-time
+  /config:
+    get:
+      tags:
+        - Initialize
+      summary: Get Configuration
+      operationId: configGet
+      description: Returns current system configuration (e.g. max bookable date).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  maxBookableDate:
+                    type: string
+                    format: date
+                    example: 2026-12-04
+  /booking/prebook:
+    post:
+      tags:
+        - Booking
+      summary: Prebook (Reserve) Offer
+      description: |-
+        Reserves selected offer and compartment. Requires solved PREBOOK captcha.
+        Creates a temporary reservation that must be paid within a time limit.
+      parameters:
+        - in: header
+          name: X-Token
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+  /booking/payment-initialization:
+    post:
+      tags:
+        - Booking
+      summary: Initialize Payment
+      operationId: bookingPaymentInit
+      description: |-
+        Starts payment process for a selected offer. Includes full offer details, passenger data, and selected compartment.
+        The ticketId is obtained from a prior prebook step (may happen automatically server-side).
+        Returns payment provider redirect URL.
+      parameters:
+        - in: header
+          name: X-Token
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lang:
+                  type: string
+                  enum: [ de, en, it, nl, fr ]
+                  example: de
+                ticketId:
+                  description: ticket/session ID (obtained from prebook)
+                  type: string
+                  example: 7d49bdd266684fff827771c547f4d3dd
+                paymentMethod:
+                  description: selected payment method
+                  type: string
+                  enum: [ CREDIT_CARD, PAYPAL, EPS ]
+                  example: CREDIT_CARD
+                orders:
+                  description: list of booking orders (outward + optional return)
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      objects:
+                        description: passengers with personal data
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              example: person
+                            birthDate:
+                              type: string
+                              format: date
+                            cards:
+                              type: array
+                              items:
+                                type: number
+                            firstName:
+                              type: string
+                              example: Max
+                            lastName:
+                              type: string
+                              example: Mustermann
+                      offers:
+                        description: selected offers with compartment selection (marked with `selected` field)
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/OfferDetails'
+                      sections:
+                        description: connection sections (echoed from offer response)
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Section'
+                      filter:
+                        type: object
+                      rfpIndex:
+                        type: number
+                      relations:
+                        type: array
+                        items:
+                          type: object
+      responses:
+        '200':
+          description: |-
+            Empty response body. Payment redirect is handled client-side via Saferpay (SIX Payment Services).
+            Browser navigates to: `https://www.saferpay.com/vt2/api/PaymentPage/{customerId}/{transactionId}/{token}`
+            After payment completion, Saferpay redirects back to nightjet.com which calls `/booking/finalize`.
+  /booking/finalize:
+    post:
+      tags:
+        - Booking
+      summary: Finalize Booking
+      operationId: bookingFinalize
+      description: Completes booking after successful payment. Also available as GET with ?token=&lang= for redirect-based finalization.
+      parameters:
+        - in: header
+          name: X-Token
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+  /booking/offerValid:
+    get:
+      tags:
+        - Booking
+      summary: Check Booking Validity
+      operationId: bookingOfferValid
+      description: Checks if a booked ticket/offer is still valid.
+      parameters:
+        - in: query
+          name: ticketId
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: OK
+  /booking/insurance:
+    post:
+      tags:
+        - Booking
+      summary: Create Insurance Contract
+      operationId: bookingInsurance
+      description: Adds Europäische Reiseversicherung cancellation insurance to a booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+  /booking/resendEmail:
+    post:
+      tags:
+        - Booking
+      summary: Resend Confirmation Email
+      operationId: bookingResendEmail
+      description: Resends booking confirmation email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+  /booking/taxCertificate/{ticketID}:
+    get:
+      tags:
+        - Booking
+      summary: Download Tax Certificate
+      operationId: bookingTaxCertificate
+      description: Downloads input tax certificate (Vorsteuerbescheinigung) for a booking.
+      parameters:
+        - in: path
+          name: ticketID
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: OK
+  /erv/offer:
+    post:
+      tags:
+        - Insurance
+      summary: Get Insurance Offer
+      operationId: ervOffer
+      description: Retrieves cancellation insurance offer from Europäische Reiseversicherung for a given booking amount.
+      parameters:
+        - in: query
+          name: lang
+          schema:
+            type: string
+            enum: [ de, en, it, nl, fr ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+  /fulfillment:
+    get:
+      tags:
+        - Ticket
+      summary: Get Ticket Fulfillment
+      operationId: fulfillmentGet
+      description: Retrieves ticket fulfillment data (for mobile/PDF display).
+      parameters:
+        - in: query
+          name: ticketId
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: language
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /fulfillment/createPDF:
+    get:
+      tags:
+        - Ticket
+      summary: Create PDF Ticket
+      operationId: fulfillmentCreatePdf
+      description: Generates a PDF ticket document.
+      parameters:
+        - in: query
+          name: ticketId
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: language
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+  /ticket:
+    get:
+      tags:
+        - Ticket
+      summary: Get Ticket Details
+      operationId: ticketGet
+      description: Retrieves ticket/booking details by ID.
+      parameters:
+        - in: query
+          name: ticketId
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: lang
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /ticket/cancel:
+    post:
+      tags:
+        - Ticket
+      summary: Cancel Ticket
+      operationId: ticketCancel
+      description: Cancels a booked ticket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+  /ticket/cancel-condition:
+    post:
+      tags:
+        - Ticket
+      summary: Get Cancellation Conditions
+      operationId: ticketCancelCondition
+      description: Returns cancellation conditions and refund amount for a ticket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+  /captcha/challenge/{type}:
+    get:
+      tags:
+        - Captcha
+      summary: Get Proof-of-Work Challenge
+      operationId: captchaChallenge
+      description: |-
+        Returns a SHA-256 proof-of-work challenge that must be solved before calling captcha-protected endpoints.
+        The client must find a `number` such that `SHA256(salt + number)` equals the `challenge` hash.
+        The solved result is base64-encoded as JSON and passed as `captcha` query parameter.
+      parameters:
+        - in: path
+          name: type
+          schema:
+            type: string
+            enum: [ connection, offer, prebook ]
+          required: true
+          description: type of captcha challenge (matches enabledCaptchaTypes from /init/start)
+        - in: query
+          name: from
+          schema:
+            type: string
+          required: true
+          description: EVA number of departure station (or meta station)
+          example: 8096009
+        - in: query
+          name: to
+          schema:
+            type: string
+          required: true
+          description: EVA number of arrival station (or meta station)
+          example: 1190100
+        - in: header
+          name: X-Token
+          schema:
+            type: string
+          required: true
+          description: JWT token from /init/start
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptchaChallenge'
+  /connection/{evaFrom}/{evaTo}/{date}:
+    get:
+      tags:
+        - Connection
+      summary: Connection Search
+      operationId: connectionSearch
+      description: |-
+        Returns available night train connections between two stations for a given date.
+        Requires a solved captcha token. Each connection contains a short-lived JWT token
+        used to authorize subsequent /offer/get requests.
+      parameters:
+        - in: path
+          name: evaFrom
+          schema:
+            type: string
+          required: true
+          description: EVA number of departure station (or meta station)
+          example: 8096009
+        - in: path
+          name: evaTo
+          schema:
+            type: string
+          required: true
+          description: EVA number of arrival station (or meta station)
+          example: 1190100
+        - in: path
+          name: date
+          schema:
+            type: string
+            format: date
+          required: true
+          description: travel date (YYYY-MM-DD)
+          example: 2026-06-07
+        - in: query
+          name: captcha
+          schema:
+            type: string
+          required: true
+          description: base64url-encoded solved captcha challenge JSON
+        - in: query
+          name: skip
+          schema:
+            type: integer
+          description: number of results to skip (pagination)
+        - in: header
+          name: x-token
+          schema:
+            type: string
+          required: true
+          description: JWT token from /init/start
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionResponse'
 components:
   requestBodies:
     InitRequest:
@@ -626,6 +1211,107 @@ components:
           schema:
             $ref: '#/components/schemas/OfferRequest'
   schemas:
+    CaptchaChallenge:
+      description: SHA-256 proof-of-work challenge to be solved by the client
+      type: object
+      properties:
+        algorithm:
+          description: hash algorithm to use
+          type: string
+          enum: [ SHA-256 ]
+          example: SHA-256
+        challenge:
+          description: target hash that SHA256(salt + number) must equal
+          type: string
+          example: c725d9727872a1f0ff0745fe225a2c04b0b303d3a49cf3fbeed0dada28deced6
+        maxnumber:
+          description: upper bound for brute-force search
+          type: integer
+          example: 1000000
+        salt:
+          description: salt prepended to the number before hashing; contains encoded metadata (expiry, type, publicId, route)
+          type: string
+        signature:
+          description: server signature to verify challenge authenticity
+          type: string
+    ConnectionResponse:
+      description: list of available night train connections
+      type: object
+      properties:
+        connections:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                description: departure station
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: Hamburg Hbf
+                  number:
+                    description: 7-digit EVA number
+                    type: string
+                    example: 8002549
+              to:
+                description: arrival station
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: Wien Hbf (Bahnsteige 3-12)
+                  number:
+                    description: 7-digit EVA number
+                    type: string
+                    example: 8103000
+              trains:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    train:
+                      description: train type and number
+                      type: string
+                      example: NJ 499
+                    date:
+                      description: departure date
+                      type: string
+                      format: date
+                      example: 2026-06-07
+                    departure:
+                      type: object
+                      properties:
+                        utc:
+                          description: departure time as UNIX timestamp (ms)
+                          type: integer
+                          example: 1780852740000
+                        local:
+                          description: local departure time (ISO 8601 without offset)
+                          type: string
+                          example: '2026-06-07T19:19:00'
+                    arrival:
+                      type: object
+                      properties:
+                        utc:
+                          description: arrival time as UNIX timestamp (ms)
+                          type: integer
+                          example: 1780904880000
+                        local:
+                          description: local arrival time (ISO 8601 without offset)
+                          type: string
+                          example: '2026-06-08T09:48:00'
+                    trainType:
+                      description: train product type identifier
+                      type: string
+                      example: dani
+                    seatAsIC:
+                      description: whether seating is operated as Deutsche Bahn Nacht-IC (bookable via bahn.de/sbb.ch instead)
+                      type: boolean
+                      example: false
+                    token:
+                      description: short-lived JWT token authorizing an /offer/get request for this specific connection
+                      type: string
     Connection:
       description: contains search results for connection between two train stations
       type: object
@@ -859,23 +1545,51 @@ components:
           type: string
           example: https://www.nightjet.com/de/ticket-buchen/#/home
         i18nData:
-          description: i18n data for all available languages (TODO add object properties)
+          description: |-
+            flat map of i18n keys to translation objects;
+            each entry contains translations per language and a version counter
           type: object
+          additionalProperties:
+            type: object
+            properties:
+              de:
+                type: string
+              en:
+                type: string
+              it:
+                type: string
+              fr:
+                type: string
+              nl:
+                type: string
+              version:
+                type: integer
+            example:
+              de: Hinfahrt
+              en: Outward journey
+              version: 2
         enabledPaymentMethods:
           description: enabled payment methods (possibly incomplete)
           type: string
           enum: [ CREDIT_CARD, PAYPAL, EPS ]
           example: PAYPAL
         useAgbCheckbox:
-          description: TODO
+          description: whether to display terms & conditions checkbox during booking
           type: boolean
           example: true
+        enabledCaptchaTypes:
+          description: booking steps requiring anti-bot captcha verification
+          type: array
+          items:
+            type: string
+            enum: [ CONNECTION, OFFER, PREBOOK ]
+          example: [ CONNECTION, OFFER, PREBOOK ]
         ervEnabled:
-          description: TODO
+          description: whether Europäische Reiseversicherung (travel cancellation insurance) is available
           type: boolean
           example: false
         magnoliaBaseUrl:
-          description: TODO
+          description: base URL for Magnolia CMS content (e.g. legal texts, info pages)
           type: string
           example: https://www.nightjet.com
         maxBookableDate:
@@ -893,7 +1607,12 @@ components:
           format: date
           example: 1993-10-13
         cards:
-          description: specified discount cards TODO add entries
+          description: |-
+            discount card IDs (numeric codes from frontend, not exposed via API);
+            Austria: 9097862 (Vorteilscard 66), 108 (VC Classic), 125 (VC Comfort), 7341162 (VC Family), 120 (VC Jugend), 118 (VC Senior), 100000040+ (KlimaTickets);
+            Germany: 127 (BahnCard 25 2.Kl), 126 (BC25 1.Kl), 129 (BC50 2.Kl), 128 (BC50 1.Kl), 131 (BC100 2.Kl), 130 (BC100 1.Kl);
+            Switzerland: 134 (Halbtax), 3649466 (Halbtax+RailPlus), 3044852 (GA 2.Kl), 133 (GA 1.Kl), 136 (RailPlus);
+            International: 2391 (Interrail/Eurail Globalpass), 9097867 (Int. Behindertenpass)
           type: array
           items:
             type: number
@@ -904,40 +1623,308 @@ components:
           enum: [ male, female, diverse ]
           example: male
         type:
-          description: passenger type; defaults to "person" TODO finalize enum
+          description: passenger type
           type: string
-          enum: [ person, challenged, dog ]
+          enum: [ person, challenged, dog, bike, car, motorbike, item ]
           example: person
     OfferDetails:
-      description: TODO JSON object holding detail information about price, class, validity, etc. of current offer
+      description: a bookable offer containing ticket type, pricing, and compartment options
       type: object
+      properties:
+        name:
+          description: offer display name
+          type: string
+          example: Standard-Ticket inkl. Reservierung
+        productType:
+          description: offer product type
+          type: string
+          enum: [ CONNECTION ]
+          example: CONNECTION
+        partialOffer:
+          description: whether this is a partial offer (only covers part of the journey)
+          type: boolean
+          example: false
+        productDetails:
+          description: detailed product information
+          type: array
+          items:
+            type: object
+            properties:
+              scope:
+                description: section/passlist range this product covers [[connectionIdx, sectionIdx, fromStopIdx, toStopIdx]]
+                type: array
+                items:
+                  type: array
+                  items:
+                    type: integer
+                example: [[0, 0, 0, 11]]
+              title:
+                description: internal product title
+                type: string
+                example: ARES Standard-Ticket Nachtverkehr
+              name:
+                description: localized product name
+                type: object
+                properties:
+                  de:
+                    type: string
+                  en:
+                    type: string
+                  it:
+                    type: string
+              prodGroupLabels:
+                description: product group tags (cancellation policy, binding, etc.)
+                type: array
+                items:
+                  type: string
+                example: ["918 1 Reservierung Default", "Vollstorno", "Zugbindung", "eineFahrt", "featured"]
+              validityPeriodFrom:
+                type: string
+                format: date-time
+              validityPeriodTo:
+                type: string
+                format: date-time
+              globallyPriced:
+                description: whether pricing is global (flat) rather than per-segment
+                type: boolean
+                example: true
+              objects:
+                description: per-passenger pricing
+                type: array
+                items:
+                  type: object
+                  properties:
+                    index:
+                      description: index into request objects array
+                      type: number
+                      example: 0
+                    priceClass2:
+                      description: base price in EUR (2nd class)
+                      type: number
+                      example: 94.9
+                    priceClass1:
+                      description: base price in EUR (1st class, if available)
+                      type: number
+              validityType:
+                type: string
+                enum: [ oneway ]
+                example: oneway
+        reservation:
+          description: reservation options and compartment pricing
+          type: object
+          properties:
+            priceClass2:
+              description: reservation surcharge for 2nd class (0 if included in ticket)
+              type: number
+              example: 0
+            reservationSegments:
+              description: available reservation options per segment
+              type: array
+              items:
+                type: object
+                properties:
+                  scope:
+                    description: passlist range [connectionIdx, sectionIdx, fromStopIdx, toStopIdx]
+                    type: array
+                    items:
+                      type: integer
+                    example: [0, 0, 0, 11]
+                  compartments:
+                    description: available compartment types with pricing
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Compartment'
+                  reservability:
+                    description: reservation status (RP = mandatory)
+                    type: string
+                    example: RP
+        priceClass2:
+          description: total minimum price in EUR (base + cheapest compartment)
+          type: number
+          example: 94.9
+        co2Savings:
+          description: CO2 savings in kg compared to car travel
+          type: number
+          example: 191.55
+        refCards:
+          description: applicable discount card references
+          type: array
+          items:
+            type: object
+        outputTypes:
+          description: available ticket output formats
+          type: array
+          items:
+            type: string
+            enum: [ MOBILE, PDF, SECURITY_PAPER ]
+          example: [ MOBILE, PDF, SECURITY_PAPER ]
+        prodGroupLabels:
+          description: product group tags
+          type: array
+          items:
+            type: string
+        validityPeriodFrom:
+          type: string
+          format: date-time
+        validityPeriodTo:
+          type: string
+          format: date-time
+        validityType:
+          type: string
+          enum: [ oneway ]
+        rideBound:
+          description: whether ticket is bound to this specific train
+          type: boolean
+          example: true
+        singleVariety:
+          description: whether only one variety (class) is available
+          type: boolean
+          example: true
+        reservationMandatory:
+          description: whether reservation is required
+          type: boolean
+          example: true
+    Compartment:
+      description: a bookable compartment type with pricing and spot preferences
+      type: object
+      properties:
+        id:
+          description: internal compartment ID
+          type: number
+          example: 5000111
+        externalIdentifier:
+          description: compartment type identifier
+          type: string
+          example: couchetteMiniSuite
+        name:
+          description: localized compartment name
+          type: object
+          properties:
+            de:
+              type: string
+              example: Mini Cabin
+            en:
+              type: string
+              example: Mini Cabin
+            it:
+              type: string
+              example: Mini Cabin
+        freeFollowupReservationApplied:
+          description: whether a free follow-up reservation was applied
+          type: boolean
+          example: false
+        accommodationClass:
+          description: class(es) this compartment belongs to
+          type: array
+          items:
+            type: string
+            enum: [ class1, class2 ]
+          example: [ class2 ]
+        accommodationType:
+          description: accommodation category (SE=seating, LE=couchette, BE=sleeper)
+          type: string
+          enum: [ SE, LE, BE ]
+          example: LE
+        capacity:
+          description: maximum number of passengers in this compartment
+          type: number
+          example: 4
+        special:
+          description: whether this is a special compartment (e.g. ladies only, wheelchair)
+          type: boolean
+          example: false
+        surchargePrice:
+          description: surcharge on top of base ticket price in EUR
+          type: number
+          example: 65
+        objects:
+          description: per-passenger pricing for this compartment
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                description: index into request objects array
+                type: number
+                example: 0
+              price:
+                description: total price in EUR (base + surcharge)
+                type: number
+                example: 159.9
+              reservability:
+                description: reservation status
+                type: string
+                example: RP
+        spotLocations:
+          description: available seat/bed preference options
+          type: array
+          items:
+            type: object
+            properties:
+              param:
+                description: preference parameter value
+                type: string
+                enum: [ WINDOW_UPPER, AISLE_LOWER, NECESSARILY_WINDOW_LOWER ]
+                example: WINDOW_UPPER
+              name:
+                description: localized preference name
+                type: object
+                properties:
+                  de:
+                    type: string
+                  en:
+                    type: string
+                  it:
+                    type: string
+        selected:
+          description: marks this compartment as selected (present only in payment-initialization request); value is the accommodation class
+          type: boolean
+          example: true
+        privateVariations:
+          description: pricing for booking entire compartment privately (instead of shared)
+          type: array
+          items:
+            type: object
+            properties:
+              count:
+                description: number of compartments
+                type: number
+                example: 1
+              surchargePrice:
+                description: surcharge for private booking
+                type: number
+                example: 490
+              allocations:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    objects:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          index:
+                            type: number
+                          price:
+                            type: number
+                            example: 584.9
+        privateCompartmentContainsSubcompartments:
+          description: whether private compartment contains sub-compartments (e.g. connected mini cabins)
+          type: boolean
+          example: false
     OfferFilter:
       description: search filter for offer
       type: object
       properties:
         njTrain:
-          description: train type and number, separated with a space
+          description: train name filter (from connection response)
           type: string
-          example: NJ 40491
+          example: NJ 499
         njDeparture:
-          description: departure time as UNIX timestamp in milliseconds
+          description: departure timestamp filter (ms)
           type: number
-          example: 1697221440000
-        njRoute:
-          description: list of stations to be passed along the route
-          type: array
-          items:
-            $ref: '#/components/schemas/RouteEntry'
-        njProduct:
-          description: official ticket title
-          type: string
-          example: ARES Sparschiene Nachtverkehr
-        # njCompartment: this.product.compartment
-        privateVariationCount:
-          description: TODO
-          type: object
-          nullable: true
-          example: null
+          example: 1780852740000
     OfferRequest:
       description: JSON object containing search parameters
       type: object
@@ -978,10 +1965,16 @@ components:
           description: maximum number of changes between trains
           type: number
           example: 0
+        connections:
+          description: number of connections to return
+          type: number
+          example: 1
         filter:
           $ref: '#/components/schemas/OfferFilter'
         objects:
-          description: passenger list TODO add more details regarding possible entries
+          description: |-
+            passenger list; one entry per passenger/vehicle/item;
+            type field determines the kind (person, challenged, dog, bike, car, motorbike, item)
           type: array
           items:
             $ref: '#/components/schemas/ObjectsEntry'
@@ -995,6 +1988,9 @@ components:
           type: string
           enum: [ de, en, it, nl, fr ]
           example: de
+        token:
+          description: short-lived JWT token from /connection endpoint authorizing this offer request
+          type: string
     OfferResponse:
       description: JSON object containing offers
       type: object
@@ -1013,23 +2009,42 @@ components:
           items:
             $ref: '#/components/schemas/OfferResultEntry'
     OfferResultConnection:
-      description: JSON object holding detail information about connection in offer result
+      description: detail information about a connection in offer result
       type: object
       properties:
         njIndex:
           description: index of NightJet section in list "sections"
           type: number
-          example: 1
+          example: 0
         offers:
-          description: list of objects containing price, class, validity, etc. details of current offer(s)
+          description: list of bookable offers (empty if sold out)
           type: array
           items:
             $ref: '#/components/schemas/OfferDetails'
         sections:
-          description: list of objects representing train sections of current connection
+          description: list of train sections (legs) of this connection
           type: array
           items:
             $ref: '#/components/schemas/Section'
+        warnings:
+          description: availability warnings for this connection
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                description: warning message
+                type: string
+                example: The leg has no or limited availability.
+              sectionIndex:
+                description: index of affected section
+                type: number
+                example: 0
+              status:
+                description: warning type
+                type: string
+                enum: [ noAvailability, insufficientAvailability, temporarilyUnavailable ]
+                example: noAvailability
     OfferResultEntry:
       description: JSON object holding detail information about offer result
       type: object
@@ -1048,7 +2063,7 @@ components:
               type: number
               example: 0
         rfpIndex:
-          description: TODO
+          description: request filter parameter index (internal reference to search filter)
           type: number
           example: 0
     Relation:
@@ -1081,7 +2096,7 @@ components:
           format: date-time
           example: '2024-06-20T20:21:00+02:00'
         arrivalAccessExitAmendable:
-          description: TODO
+          description: whether passengers can board/exit at this station on arrival
           type: boolean
           example: true
         arrivalPlatform:
@@ -1095,7 +2110,7 @@ components:
           format: date-time
           example: '2024-06-20T20:21:00+02:00'
         departureAccessExitAmendable:
-          description: TODO
+          description: whether passengers can board/exit at this station on departure
           type: boolean
           example: true
         departurePlatform:
@@ -1103,7 +2118,7 @@ components:
           type: string
           example: 3
         departurePlatformRT:
-          description: TODO; only used if platform is known/available
+          description: real-time departure platform (if available and differs from scheduled)
           type: string
           example: 3
         gpsCoordinates:
@@ -1127,13 +2142,79 @@ components:
           maximum: 9999999
           example: 8000147
         stopState:
-          description: current status of departure and arrival times (?); possibly incomplete
-          type: string
-          enum: [ DEP_PROGNOSED, ARR_PROGNOSED, DEP_CALCULATED, ARR_CALCULATED ]
-          example:
+          description: status indicators for departure/arrival times at this stop
+          type: array
+          items:
+            type: string
+            enum: [ DEP_PROGNOSED, ARR_PROGNOSED, DEP_CALCULATED, ARR_CALCULATED ]
+          example: [ DEP_PROGNOSED, ARR_PROGNOSED ]
     Section:
-      description: TODO JSON object holding detail information about a train section within the current connection
+      description: a train section (leg) within a connection
       type: object
+      properties:
+        departureTimestamp:
+          description: departure time (ISO 8601 with offset)
+          type: string
+          format: date-time
+          example: '2026-06-07T19:19:00+02:00'
+        arrivalTimestamp:
+          description: arrival time (ISO 8601 with offset)
+          type: string
+          format: date-time
+          example: '2026-06-08T09:48:00+02:00'
+        transportType:
+          description: type of transport
+          type: string
+          enum: [ journey ]
+          example: journey
+        passlist:
+          description: ordered list of stations along the route (same structure as RouteEntry, with stopState as array)
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteEntry'
+        attributes:
+          description: train metadata attributes with range indices into passlist
+          type: array
+          items:
+            $ref: '#/components/schemas/SectionAttribute'
+        i:
+          description: section index
+          type: number
+          example: 0
+    SectionAttribute:
+      description: metadata attribute for a section (e.g. operator, category, features)
+      type: object
+      properties:
+        attributeType:
+          description: type of attribute
+          type: string
+          enum: [ operator, operator_id, pclass, intcat, cat, name, num, intnum, generic, info, dir ]
+          example: generic
+        range:
+          description: index range [start, end] in passlist this attribute applies to
+          type: array
+          items:
+            type: integer
+          example: [0, 12]
+        value:
+          description: attribute value
+          example: WLAN verfügbar
+        svalue:
+          description: short display value
+          type: string
+          example: NJ
+        lvalue:
+          description: long display value
+          type: string
+          example: nightjet
+        code:
+          description: attribute code (e.g. WV=WiFi, FR=bike reservation, SW=sleeper, LW=couchette, MC=mini cabin)
+          type: string
+          example: WV
+        priority:
+          description: display priority (lower = more important)
+          type: number
+          example: 710
     Station:
       description: train station data
       type: object
