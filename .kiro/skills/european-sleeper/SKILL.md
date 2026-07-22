@@ -65,9 +65,36 @@ Disabled for: NL (84), BE (88), CZ (54), FR (87), CH (85), IT (83)
 Prices in: EUR, CZK, GBP, JPY, USD
 Currency codes (for checkout): 1=EUR, 2=CZK, 3=GBP, 4=JPY, 5=USD
 
+### Fixed Exchange Rates
+ES uses fixed rates (like Leo Express). Derived from ticket prices:
+- CZK/EUR ≈ 24.9 (market ~25.3 → CZK is ~2% more expensive)
+- GBP/EUR ≈ 0.88 (market ~0.84 → **GBP is ~5% cheaper**)
+- JPY/EUR ≈ 191.7 (market ~162 → JPY is ~18% more expensive)
+- USD/EUR ≈ 1.18 (market ~1.08 → USD is ~9% more expensive)
+
+Recommendation: pay in GBP if possible.
+
 ## Booking States
-- 0 = pending (reservation created, awaiting payment)
-- 4 = confirmed (paid)
+- 0 = pending (reservation created, modifiable)
+- 1 = checkout initiated (Pay.nl URL generated, cancel-trip no longer works)
+- 4 = finalized (paid, or auto-expired after checkout was initiated)
+
+## Booking Flow
+1. `POST /search/trains` → find train (trainNumber, travelDate)
+2. `POST /search/availability` → get accommodation types + prices
+3. `POST /booking/upsert?lang=en-GB` → create reservation (assigns seats, 30-min expiry timer)
+4. `POST /booking/start-checkout?lang=en-GB&currency=1&bookingId={id}` → returns `{"checkoutUrl": "https://checkout.pay.nl/to/order/{uuid}"}`
+5. User redirected to Pay.nl for payment
+6. `GET /booking/status?bookingId={id}&paymentId={uuid}` → poll for `isPaid: true`
+7. Booking state transitions: 0 → 1 (after checkout) → 4 (after payment/expiry)
+
+### Cancellation
+- `cancel-trip`: works in state 0 only (before checkout)
+- `cancel-unpaid-booking`: works in state 1 (after checkout initiated, before payment)
+- No auth required — just needs the booking UUID
+
+### No Auth
+All booking endpoints are unauthenticated. Knowing the booking UUID grants full access (read, modify, cancel). UUIDs are unguessable (v4).
 
 ## Accommodation Types by Route
 

@@ -372,7 +372,19 @@ paths:
           required: true
       responses:
         '200':
-          description: Empty response body. Payment redirect handled client-side via Pay.nl.
+          description: |-
+            Returns the Pay.nl checkout URL. Frontend redirects user to this URL for payment.
+            After this call, booking state transitions from 0 to 1.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkoutUrl:
+                    description: Pay.nl payment page URL
+                    type: string
+                    format: uri
+                    example: "https://checkout.pay.nl/to/order/6a60c714-5223-891a-198f-10184243239c"
   /booking/status:
     get:
       tags:
@@ -678,8 +690,9 @@ components:
         state:
           description: |-
             booking state:
-            - 0 = pending (reservation created, awaiting payment)
-            - 4 = confirmed (paid)
+            - 0 = pending (reservation created, awaiting payment, cancel-trip works)
+            - 1 = checkout initiated (Pay.nl URL generated, only cancel-unpaid-booking works)
+            - 4 = finalized (paid, or auto-expired after checkout was initiated)
           type: integer
           minimum: 0
           example: 0
