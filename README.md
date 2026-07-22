@@ -22,6 +22,27 @@ Booking API for [europeansleeper.eu](https://www.europeansleeper.eu), including:
 - Payment via Pay.nl
 - 3 routes: Brussels–Prague, Brussels–Milan, Paris–Berlin
 
+### Leo Express (`leo-express-api.yaml`)
+Booking API for [leoexpress.com](https://www.leoexpress.com), including:
+- GraphQL-based connection search with multi-class pricing (introspection enabled, 158 types)
+- Night train LE235: Frankfurt (Main) Süd → Przemyśl Główny (overnight, 1193 km via Leipzig/Dresden/Poland)
+- 6 travel classes: Economy, Economy Plus, Business, Premium (FLIRT), Economy Sleeper, Economy Sleeper Lady (RIC)
+- 4 fleet types: Stadler FLIRT EMU, RIC coaches, Talgo VI, Stadler LINT DMU (each with distinct car scheme)
+- Live train positions with GPS, speed, bearing, and delay data (per-station filtering)
+- Station database with GPS coordinates (189 stations across 8 countries)
+- Seat map with SVG car layouts and free seat lists
+- Full booking flow via GraphQL (search → createOrder → seat selection → payment via GoPay)
+- Interrail/Eurail reservations bookable at 0€ via API (confirmed working)
+- 98 tariff/discount types (Interrail, ZTP/ŤZP, Polish ULGA, family, group, corporate)
+- 8 add-on services (bicycle, ski, dog, parking) and 30 on-board facility types
+- Timetable data with calendar validity and exception days
+- 9 carriers including Leo Express, Koleje Dolnośląskie, Lux Express, Erabus
+- Multi-currency support (EUR, CZK, PLN) with fixed internal exchange rates
+
+> [!NOTE]
+> The Leo Express booking UI is a single-page application with no deep-link support.
+> There is no way to construct a URL that pre-fills search parameters or links to a specific connection.
+
 ## Usage
 
 If you're using Google Chrome, it will block all requests from SwaggerUI by default. To circumvent this, you can create a new shortcut to Google Chrome and append the following parameters: `--disable-web-security -user-data-dir=~` (note: single dash in front of `user-data-dir`). The directory for `user-data-dir` is not important, but it needs to exist on the local file system.
