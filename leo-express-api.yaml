@@ -1,0 +1,3233 @@
+openapi: 3.0.0
+info:
+  title: Leo Express API
+  version: 1.0.0
+  description: |-
+    Booking API for [leoexpress.com](https://www.leoexpress.com), including:
+    - Connection search with multi-class pricing (Business, Economy, Economy Plus, Premium, Economy Sleeper, Economy Sleeper Lady)
+    - Live train positions with GPS coordinates, speed, bearing, and delay data
+    - Station database with GPS coordinates (189 stations across CZ, PL, SK, DE, LT, LV, ET, UA)
+    - Carrier and route metadata
+    - Full booking flow via GraphQL (search → createOrder → seat selection → payment)
+    - Seat map with car layouts (base64 SVG) and free seat lists
+    - Tariff system with 98 discount types (ZTP, ŤZP, Interrail, Polish ULGA, family, group, corporate)
+    - 8 add-on services (bicycle, ski, dog, parking, seat reservation, thermal pass)
+    - 30 on-board facility types (WiFi, power, AC, steward, sleep set, catering)
+    - Timetable data with calendar validity and exception days
+    - Time ticket (pass) pricing
+    - Order management (prolong, add-on services, reseat, refund)
+    - Night train LE235: Frankfurt (Main) Süd → Przemyśl Główny (overnight, 1193 km)
+
+    ## Architecture
+
+    The API consists of two parts:
+    - **GraphQL** endpoint at `https://graph.leoexpress.com/le` — full API with 60+ queries and 50+ mutations
+    - **REST** endpoints at `https://www.leoexpress.com/api` — session management and legacy order processing
+
+    The GraphQL endpoint supports full introspection (`__schema` queries).
+
+    ## Authentication
+
+    Search, carriers, delays, stations, tariffs, services, and facility queries require no authentication.
+    Booking operations use an `order_code` + `digest` (base64 token) pair returned when creating an order.
+    User account operations require a `token` from the `loginUser` mutation.
+
+    ## Station Identifiers
+
+    Stations can be referenced by:
+    - EVA numbers (e.g. `8010366` = Weimar, `8002041` = Frankfurt (Main) Süd)
+    - Internal string codes (e.g. `PRZEMYSL`, `PRAHA`, `LEIPZIG`, `DRESDEN`)
+    - Internal numeric codes (e.g. `5434124` = Praha hl.n., `5102825` = Przemyśl Zasanie)
+
+    The `stations` query returns all 189 stations with GPS coordinates.
+
+    ## Booking Flow (GraphQL)
+
+    1. `searchConnections` → returns connections with `hash` per connection
+    2. `createOrder` mutation (hash + classCombination) → returns `order_code` + `digest`
+    3. `carsWithFreeSeats` query (ticket_id) → seat map with free seats
+    4. `changeSeat` mutation → assign specific seat
+    5. `orderPaymentMethodsExt` query (digest) → available payment methods
+    6. `bindOrderToUser` mutation → submit passenger email/name
+    7. `getApplicationData` query → get application token for payment gateway
+    8. `createGoPayPayment` mutation → get redirect URL to GoPay payment form
+    9. User completes payment on GoPay → redirect back
+    10. `verifyGoPayPayment` mutation → confirm payment status
+
+    ## Booking Flow (REST, legacy)
+
+    Steps 2–6 can alternatively use REST endpoints (`/api/order/process-order`, `/api/seats/change`,
+    `/api/payment/choose-method`), but these require browser session cookies and are less reliable
+    from API clients.
+
+servers:
+  - url: https://graph.leoexpress.com
+    description: GraphQL API (all /le#... paths)
+  - url: https://www.leoexpress.com
+    description: REST API (all /api/... paths)
+tags:
+  - name: Search
+    description: Connection search and route information
+  - name: Stations
+    description: Station database with GPS coordinates
+  - name: Carriers
+    description: Carrier metadata
+  - name: Live Data
+    description: Real-time train positions and delays
+  - name: Timetables
+    description: Static timetable data with calendar validity
+  - name: Tariffs
+    description: Passenger types and discount card definitions
+  - name: Booking
+    description: Order creation and management
+  - name: Seats
+    description: Seat maps and seat selection
+  - name: Payment
+    description: Payment methods and user cards
+  - name: Pricing
+    description: Minimum prices and time ticket pricing
+  - name: Session
+    description: Session and currency management
+
+paths:
+  /le#searchConnections:
+    post:
+      tags:
+        - Search
+      summary: Search Connections
+      operationId: searchConnections
+      description: |-
+        Search for train/bus connections between two stations on a given date.
+        Returns available connections with pricing per class, transfer info, and a `hash`
+        per connection used to create an order.
+
+        Station IDs can be EVA numbers (e.g. `8010366`), internal string codes (e.g. `PRZEMYSL`),
+        or internal numeric codes (e.g. `5434124`).
+
+        The `persons` array defines passenger composition. Each entry has a `name` (passenger type)
+        and optional `cards` array for discount cards (e.g. `"interrailbus"`).
+
+        The `services` array requests additional services (e.g. service_id `"4"` = bicycle).
+
+        The optional `backride` variable specifies a return date (format `DD.MM.YYYY`) for round-trip searches.
+
+        Additional undocumented parameters for GPS-based search:
+        - `from_lat`, `from_lon`: GPS coordinates of origin (for door-to-door / D2D service)
+        - `to_lat`, `to_lon`: GPS coordinates of destination
+        - `from_address`, `to_address`: Address strings for D2D pickup/dropoff
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query searchConnections($from: String, $to: String, $date: String, $persons: [RateArgument], $services: [ServiceArgument], $currency: String, $timestamp: Int, $locale: String, $token: String, $platform: String) { searchResults(from: $from, to: $to, date: $date, persons: $persons, services: $services, currency: $currency, timestamp: $timestamp, locale: $locale, token: $token, platform: $platform) { return_msg search_msg { msg icon color_bg color_bg_icon station_from { id name } station_to { id name } } return_code date timestamp connections { origin { id name type translations { locale name } } destination { id name type translations { locale name } } departure departure_time { date timezone_type timezone } arrival arrival_time { date timezone_type timezone } origin_country destination_country traveltime totaltime distance lines { line_id origin destination departure arrival departure_time { date timezone_type timezone } arrival_time { date timezone_type timezone } distance type ride_id carrier_id line_stops { station { name_master country name translations { locale name } } } services { count capacity price service_id } info { facility { class_id values } delay { delay last_seen ride_id } notice { header message type type_id from to show_date } } classes { id short name kontent_hashtag } class_info { record_id capacity max_capacity standing occupied total basictotal groupTotal guaranted co2 cashback optimized is_promo rates { record_id price basicprice groupPrice count } passengers } line_obj { short name type carrier_id carrier { id name label } transport_type info { facilities { class_id values } name_required } } scheme } transfers { id distance time type subtype station_from { id name } station_to { id name } line_from line_to area { short name country timezone } } classes { id short name } class_info { record_id capacity max_capacity standing total basictotal groupTotal guaranted co2 cashback optimized is_promo rates { price basicprice groupPrice count } passengers } top_combination { total basictotal lines { line class_id short name } } msg currency hash d2d_info { dropoff pickup } } error { code message } } }'
+              variables:
+                date: '08.08.2026'
+                from: '8010366'
+                to: PRZEMYSL
+                persons:
+                  - name: adult
+                    cards: []
+                  - name: child
+                    cards: []
+                  - name: pram
+                    cards: []
+                  - name: child6
+                    cards: []
+                  - name: student
+                    cards: []
+                  - name: senior
+                    cards: []
+                services:
+                  - service_id: '4'
+                    count: 1
+                timestamp: 1784647696
+                locale: de
+                currency: EUR
+                token: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      searchResults:
+                        $ref: '#/components/schemas/SearchResults'
+  /le#connectionInfo:
+    post:
+      tags:
+        - Search
+      summary: Batch Route Info
+      operationId: connectionInfo
+      description: |-
+        Returns route metadata (transfers, duration, type) for multiple origin-destination pairs in a single request.
+        The `batch` parameter is a base64-encoded JSON array of `[from, to]` pairs.
+
+        Example decoded batch: `[["LEIPZIG",8002041],["PRAHA","LEIPZIG"],["LEIPZIG",8070003]]`
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query connectionInfoQuery($from: String, $to: String, $batch: String, $locale: String, $token: String, $platform: String) { connectionInfo(from: $from, to: $to, batch: $batch, locale: $locale, token: $token, platform: $platform) { data { from to transfers duration type } error { code message } } }'
+              variables:
+                from: null
+                to: null
+                batch: W1siTEVJUFpJRyIsODAwMjA0MV0sWyJQUkFIQSIsIkxFSVBaSUciXSxbIkxFSVBaSUciLDgwNzAwMDNdXQ==
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      connectionInfo:
+                        type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                from:
+                                  type: string
+                                  example: LEIPZIG
+                                to:
+                                  type: string
+                                  example: '8002041'
+                                transfers:
+                                  type: integer
+                                  example: 0
+                                duration:
+                                  type: integer
+                                  description: Duration in minutes
+                                  example: 45
+                                type:
+                                  type: string
+                                  example: train
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /le#stations:
+    post:
+      tags:
+        - Stations
+      summary: List All Stations
+      operationId: stations
+      description: |-
+        Returns all 189 stations in the Leo Express network with GPS coordinates, country,
+        type (train/bus), parent station grouping, and localized names.
+
+        Countries: CZ (54), PL (51), SK (47), DE (25), LT (4), UA (4), ET (3), LV (1).
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query stations($locale: String, $token: String, $platform: String) { stations(locale: $locale, token: $token, platform: $platform) { id name name_master name_lng country gps_lat gps_lon type timezone parent_station { short name country timezone } priority deleted_at translations { locale name } } }'
+              variables:
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      stations:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Station'
+  /le#ride:
+    post:
+      tags:
+        - Timetables
+      summary: Ride Detail
+      operationId: rideGraphQL
+      description: |-
+        Returns detailed information about a specific ride including all stops with GPS coordinates,
+        car composition, departure/arrival times, and distance per stop.
+
+        The ride ID comes from search results (`lines[].ride_id`) or delay queries.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query ride($id: Int, $locale: String, $token: String, $platform: String) { ride(id: $id, locale: $locale, token: $token, platform: $platform) { id date departure arrival capacity note line { short name type carrier_id carrier { id name label } transport_type } scheme stops { id arrival departure distance station { id name country gps_lat gps_lon } } cars { id name short_name classes order } } }'
+              variables:
+                id: 1077158
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      ride:
+                        $ref: '#/components/schemas/Ride'
+  /le#tariffsArray:
+    post:
+      tags:
+        - Tariffs
+      summary: All Tariffs (Flat List)
+      operationId: tariffsArray
+      description: |-
+        Returns all 98 tariff/passenger types as a flat list with discount rules, age ranges,
+        ZTP eligibility, country restrictions, and subrates.
+
+        Key tariff codes: adult, child, child6, student, senior, pram, isic, interrailbus,
+        interraileco, ztp, ztpp, tzp, tzpp, wheel, family, group, smilebus.
+
+        Polish ULGA discounts: ulga_33, ulga_37, ulga_51, ulga_78, ulga_95, ulga_100.
+        Slovak Podunajsko tariffs: podunadult, podunchild, podunstudent, podunsenior, poduntzp.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query tariffsArray($locale: String, $token: String, $platform: String) { tariffsArray(locale: $locale, token: $token, platform: $platform) { id short combine ztp_allowed ztp_child_allowed disable_for age_min age_max name_lng description_lng country lang selectable validity { from to } subrates { id short name_lng description_lng } show_type } }'
+              variables:
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      tariffsArray:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Tariff'
+  /le#services:
+    post:
+      tags:
+        - Tariffs
+      summary: Available Services
+      operationId: services
+      description: |-
+        Returns all available add-on services with IDs, names, capacity, and validity periods.
+
+        Known services:
+        - id=3: Ski transport (Nov-Dec)
+        - id=4: Bicycle transport
+        - id=5: Parking (Prague)
+        - id=6: All-day bicycle transport
+        - id=7: Dog transport
+        - id=10: Seat reservation (free)
+        - id=11: ThermalPass DS
+        - id=12: Seat catering
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query services($locale: String, $token: String, $platform: String) { services(locale: $locale, token: $token, platform: $platform) { id name name_lng short capacity price external show_detail deleted_at validity { from to } pdf } }'
+              variables:
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      services:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Service'
+  /le#facilities:
+    post:
+      tags:
+        - Tariffs
+      summary: On-board Facilities
+      operationId: facilities
+      description: |-
+        Returns all 30 on-board facility/amenity types that can be referenced in class_info.
+
+        Known facilities include: Steward (4), WiFi (5), Power outlets (6), AC (7),
+        Child seats (8), Wheelchair access (9), Quiet zone (10), Extra legroom (11),
+        Comfort seats (12), Toilet (13), Included refreshments (14), Premium menu (15),
+        Free coffee (16), Paid coffee (17), Free water (18), Cold drinks (19),
+        Newspaper (20), On-board ticket purchase (21), Reservation required (22),
+        Children's area (23), Bicycle transport (24), Ski transport (25),
+        Sleep set (26), Daily disinfected (27), D2D service (31), Free Prague parking (32).
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query facilities($locale: String, $token: String, $platform: String) { facilities(locale: $locale, token: $token, platform: $platform) { id name } }'
+              variables:
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      facilities:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Facility'
+  /le#timetables:
+    post:
+      tags:
+        - Timetables
+      summary: Timetable Data
+      operationId: timetables
+      description: |-
+        Returns timetable entries with line info, calendar validity (date range, weekdays,
+        exception days), and station stops with arrival/departure times.
+
+        The optional `type` filter can be: `train`, `bus`.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query timetables($type: String, $locale: String, $token: String, $platform: String) { timetables(type: $type, locale: $locale, token: $token, platform: $platform) { line { name type carrier { id name } route { id name } } calendar { date_from date_to days exception_plus exception_minus } stations { station { id name country } name arrival_time departure_time distance can_in can_out exception } } }'
+              variables:
+                type: train
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      timetables:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TimeTable'
+  /le#carriers:
+    post:
+      tags:
+        - Carriers
+      summary: List Carriers
+      operationId: carriers
+      description: Returns all carriers operating on the Leo Express network.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query carriers($locale: String, $token: String, $platform: String) { carriers(locale: $locale, token: $token, platform: $platform) { id name label spp } }'
+              variables:
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      carriers:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Carrier'
+              example:
+                data:
+                  carriers:
+                    - id: 1
+                      name: Leo Express
+                      label: Leo Express
+                      spp: null
+                    - id: 7
+                      name: BUS- Leo Express Global a.s.
+                      label: Leo Express Bus
+                      spp: null
+                    - id: 8
+                      name: Erabus Ltd.
+                      label: Erabus
+                      spp: null
+                    - id: 21
+                      name: ERABUS
+                      label: ERABUS
+                      spp: null
+                    - id: 23
+                      name: Leo Express Slovensko s.r.o.
+                      label: Leo Express SK
+                      spp: null
+                    - id: 24
+                      name: Lux Express
+                      label: Lux Express
+                      spp: null
+                    - id: 25
+                      name: Transdev Slezsko a.s.
+                      label: Transdev
+                      spp: null
+                    - id: 555
+                      name: Leo Express Tenders s.r.o
+                      label: Leo Express Tenders
+                      spp: null
+                    - id: 1224
+                      name: Koleje Dolnośląskie
+                      label: Koleje Dolnośląskie
+                      spp: null
+
+  /le#delays:
+    post:
+      tags:
+        - Live Data
+      summary: Live Train Positions
+      operationId: delays
+      description: |-
+        Returns real-time positions of all active Leo Express trains/buses with GPS coordinates,
+        speed, bearing, delay information, and current stop details.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query delaysQuery($locale: String) { delays(locale: $locale) { line_short line_name ride_id from from_st to to_st conf conf_st lat lng gps_time speed bearing acceleration departure_delay delay reservation stops { station_id platform track } ride { stops { arrival departure station { id name } } } } }'
+              variables:
+                locale: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      delays:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DelayInfo'
+  /le#minPrices:
+    post:
+      tags:
+        - Pricing
+      summary: Minimum Prices
+      operationId: minPrices
+      description: |-
+        Returns the minimum price for each origin-destination pair across the entire network.
+        Useful for displaying "from" prices on route overview pages.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query minPricesQuery($currency: String, $locale: String, $token: String, $platform: String) { minPrices(currency: $currency, locale: $locale, token: $token, platform: $platform) { minPrices { from to { to price } } error { code message } } }'
+              variables:
+                currency: EUR
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      minPrices:
+                        type: object
+                        properties:
+                          minPrices:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                from:
+                                  type: string
+                                  description: Origin station ID
+                                  example: '8010366'
+                                to:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      to:
+                                        type: string
+                                        description: Destination station ID
+                                        example: PRZEMYSL
+                                      price:
+                                        type: number
+                                        description: Minimum price in requested currency
+                                        example: 19.6
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /le#timeticketPrices:
+    post:
+      tags:
+        - Pricing
+      summary: Time Ticket Prices
+      operationId: timeticketPrices
+      description: |-
+        Returns pricing for time-based tickets (passes) with validity periods, per-class pricing,
+        and one-way prices. Uses a price hash to identify the route/configuration.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query timeticketPricesQuery($priceHash: String, $token: String, $locale: String, $platform: String) { timeticketPrices(priceHash: $priceHash, token: $token, locale: $locale, platform: $platform) { error { code message } timeticketPrices { id name currency_id carriers validity tax country valid_from valid_to created_at updated_at deleted_at prices { id class_id price price_oneway } } } }'
+              variables:
+                priceHash: abc123def456
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      timeticketPrices:
+                        type: object
+                        properties:
+                          timeticketPrices:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/TimeTicket'
+                          error:
+                            $ref: '#/components/schemas/Error'
+
+  /le#carsWithFreeSeats:
+    post:
+      tags:
+        - Seats
+      summary: Seat Map
+      operationId: carsWithFreeSeats
+      description: |-
+        Returns car layout and available seats for a specific ticket. Each car includes a base64-encoded
+        SVG map (`car_map`) showing the physical layout, plus a list of free seats with their class and type.
+
+        Car names like "RIC B4-1" indicate couchette cars on international night trains.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query carsWithSeatsQuery($ticket_id: String, $timestamp: Int, $locale: String, $token: String, $platform: String) { carsWithFreeSeats(ticket_id: $ticket_id, timestamp: $timestamp, locale: $locale, token: $token, platform: $platform) { cars { id name map_id car_map short_name classes order free_seats { id name seat_info car_id seat_type class_id } seat_msg } error { code message } } }'
+              variables:
+                ticket_id: '65954563'
+                timestamp: 1784647696
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      carsWithFreeSeats:
+                        type: object
+                        properties:
+                          cars:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Car'
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /le#orderPaymentMethodsExt:
+    post:
+      tags:
+        - Payment
+      summary: Available Payment Methods
+      operationId: orderPaymentMethodsExt
+      description: |-
+        Returns available payment methods for a specific order. Requires the `digest` token
+        returned when the order was created via `/api/order/process-order`.
+
+        Known payment methods:
+        - id:32 — Google Pay
+        - id:101 — Bankomatkarte / PAYMENT_CARD
+        - id:134 — Bank transfer / BANK_ACCOUNT
+        - id:143 — Apple Pay
+        - id:144 — Kryptowährungen / BITCOIN
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query allowedPaymentMethodsExtQuery($order: String, $user: String, $token: String, $digest: String, $locale: String, $platform: String) { orderPaymentMethodsExt(order: $order, digest: $digest, token: $token, user: $user, locale: $locale, platform: $platform) { available_methods { description_lng id image name_lng subtype type currency amount allow_combined combined_amount combined_leo_amount co2compensation show_on_click } error { code message } } }'
+              variables:
+                order: '261709449551281'
+                digest: base64encodedDigestToken==
+                user: null
+                token: null
+                locale: de
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      orderPaymentMethodsExt:
+                        type: object
+                        properties:
+                          available_methods:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/PaymentMethod'
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /le#getAvailableOrderServices:
+    post:
+      tags:
+        - Booking
+      summary: Order Add-on Services
+      operationId: getAvailableOrderServices
+      description: |-
+        Returns available add-on services for an existing order (e.g. extra luggage, meals, bicycle).
+        Each service has pricing, capacity, and optional validity periods.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query getAvailableOrderServicesQuery($order_code: String, $locale: String, $token: String, $platform: String) { getAvailableOrderServices(order_code: $order_code, locale: $locale, token: $token, platform: $platform) { items { order_item services { id name short capacity price external show_detail deleted_at validity { from to } pdf } } error { code message } } }'
+              variables:
+                order_code: '261709449551281'
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      getAvailableOrderServices:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/OrderServiceItem'
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /le#prolongOrder:
+    post:
+      tags:
+        - Booking
+      summary: Extend Order Timer
+      operationId: prolongOrder
+      description: |-
+        Extends the validity timer of an unpaid order by the specified number of minutes.
+        Orders have a limited window to complete payment before being cancelled.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'mutation prolongOrderMutation($order_code: String, $minutes: Int, $locale: String, $token: String, $platform: String) { prolongOrder(order_code: $order_code, minutes: $minutes, locale: $locale, token: $token, platform: $platform) { success error { code message } } }'
+              variables:
+                order_code: '261709449551281'
+                minutes: 15
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      prolongOrder:
+                        type: object
+                        properties:
+                          success:
+                            type: boolean
+                            example: true
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /le#createOrder:
+    post:
+      tags:
+        - Booking
+      summary: Create Order (GraphQL)
+      operationId: createOrder
+      description: |-
+        Creates a new order from a connection hash. This is the preferred method over the REST
+        `/api/order/process-order` endpoint, which requires browser session cookies.
+
+        The `input.classCombination` array specifies which class to book for each line (leg) in
+        multi-leg connections. For single-leg connections, one entry suffices.
+
+        Returns the order with `code`, `digest` (for payment queries), and assigned tickets with seats.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'mutation createOrder($input: OrderInput, $affiliate_code: String, $locale: String, $platform: String) { createOrder(input: $input, affiliate_code: $affiliate_code, locale: $locale, platform: $platform) { order { id code digest valid price finished order_items { id code tickets { id line { short name } class_id seat { id name short_name class_id class_short } station_from { id name } station_to { id name } } } } error { code message } } }'
+              variables:
+                input:
+                  hash: c36bc540e222639be02de0ab08344c1f
+                  class: '7'
+                  classCombination:
+                    - line: LE235
+                      class: '7'
+                locale: de
+                platform: website
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      createOrder:
+                        $ref: '#/components/schemas/OrderResponse'
+              example:
+                data:
+                  createOrder:
+                    order:
+                      id: '43663293'
+                      code: '261991397251110'
+                      digest: eTdxaEFFRmZZWHFzdDYxSGpiS3h3N29kcDhIK0Vqb1V1cVgzeUtCTm5WTT0=
+                      valid: true
+                      price: 37.5
+                      finished: false
+                      order_items:
+                        - id: '65240913'
+                          code: '262930175429338'
+                          tickets:
+                            - id: '65983747'
+                              line:
+                                short: LE235
+                                name: LE235
+                              class_id: 8
+                              seat:
+                                id: '18913'
+                                name: '17'
+                                short_name: 1/17
+                                class_id: 8
+                                class_short: ECOSLEEPERLADY
+                              station_from:
+                                id: '8010366'
+                                name: Weimar
+                              station_to:
+                                id: '5102825'
+                                name: Przemyśl Zasanie
+                    error: null
+  /le#deleteOrder:
+    post:
+      tags:
+        - Booking
+      summary: Delete/Cancel Order
+      operationId: deleteOrder
+      description: |-
+        Cancels and deletes an unpaid order. Can optionally specify specific items to cancel
+        (partial cancellation) via the `items` array.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'mutation deleteOrder($order_code: String, $items: [String], $locale: String, $token: String, $platform: String) { deleteOrder(order_code: $order_code, items: $items, locale: $locale, token: $token, platform: $platform) { success error { code message } } }'
+              variables:
+                order_code: '261991397251110'
+                items: null
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deleteOrder:
+                        type: object
+                        properties:
+                          success:
+                            type: boolean
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /le#orderData:
+    post:
+      tags:
+        - Booking
+      summary: Retrieve Order Details
+      operationId: orderData
+      description: |-
+        Returns full order details including tickets, assigned seats, stations, departure/arrival times,
+        and pricing. Requires the order ID and `digest` token from order creation.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query orderData($orderId: String, $digest: String, $user: String, $token: String, $timestamp: Int, $locale: String, $platform: String) { orderData(orderId: $orderId, digest: $digest, user: $user, token: $token, timestamp: $timestamp, locale: $locale, platform: $platform) { order { id code digest valid price finished finished_at currency co2compensation co2compensationBought order_items { id code count price priceSum stornable type tickets { id departure_date arrival_date class_id seat { id name short_name class_id class_short } station_from { id name } station_to { id name } line { short name type } scheme } } } error { code message } } }'
+              variables:
+                orderId: '43663293'
+                digest: eTdxaEFFRmZZWHFzdDYxSGpiS3h3N29kcDhIK0Vqb1V1cVgzeUtCTm5WTT0=
+                user: null
+                token: null
+                timestamp: 1753170000
+                locale: de
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      orderData:
+                        $ref: '#/components/schemas/OrderResponse'
+  /le#getUserPayCards:
+    post:
+      tags:
+        - Payment
+      summary: User Payment Cards
+      operationId: getUserPayCards
+      description: Returns saved payment cards for a registered user.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query userCardsQuery($email: String, $token: String, $locale: String, $platform: String) { getUserPayCards(email: $email, token: $token, locale: $locale, platform: $platform) { cards { id card created_at card_type } error { code message } } }'
+              variables:
+                email: user@example.com
+                token: null
+                locale: de
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      getUserPayCards:
+                        type: object
+                        properties:
+                          cards:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: integer
+                                card:
+                                  type: string
+                                  description: Masked card number
+                                  example: '****1234'
+                                created_at:
+                                  type: string
+                                  example: '2026-01-15 10:30:00'
+                                card_type:
+                                  type: string
+                                  example: visa
+                          error:
+                            $ref: '#/components/schemas/Error'
+
+  /api/ride/detail:
+    get:
+      tags:
+        - Live Data
+      summary: Ride Detail
+      operationId: rideDetail
+      description: Returns detailed information about a specific ride (train/bus service).
+      parameters:
+        - in: query
+          name: ride
+          required: true
+          schema:
+            type: string
+          description: Ride ID from search results or delay info
+          example: '1081846'
+        - in: query
+          name: locale
+          schema:
+            type: string
+            enum: [de, en, cs, sk, pl, uk]
+          example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  __typename:
+                    type: string
+                    example: Ride
+                  id:
+                    type: string
+                    example: '1081846'
+                  date:
+                    type: string
+                    format: date
+                    example: '2026-08-08'
+                  line:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: LE235
+                      short:
+                        type: string
+                        example: LE235
+                      carrier:
+                        $ref: '#/components/schemas/Carrier'
+  /api/order/process-order:
+    post:
+      tags:
+        - Booking
+      summary: Create Order
+      operationId: processOrder
+      description: |-
+        Creates a new order from a connection hash returned by `searchConnections`.
+        The response includes `order_code` and `digest` (base64 token) needed for subsequent
+        booking operations (seat selection, payment methods, finalization).
+
+        The `classes` object maps line names to the selected class and price.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - hash
+                - classes
+              properties:
+                hash:
+                  type: string
+                  description: Connection hash from searchConnections response
+                  example: c36bc540e222639be02de0ab08344c1f
+                group:
+                  type: string
+                  description: JSON-encoded group booking info
+                  example: '{"classId":"","active":false,"name":"","code":""}'
+                classes:
+                  type: string
+                  description: JSON-encoded class selection per line
+                  example: '{"LE235":{"price":103.3,"classId":"3","promo":0,"name":"Economy","code":"economy","standing":false,"kontentHash":"economy_train_ric"}}'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessOrderResponse'
+              example:
+                error: null
+                order:
+                  id: '43644505'
+                  code: '261709449551281'
+                  digest: ZXhhbXBsZURpZ2VzdFRva2VuPT0=
+                  valid: true
+                  price: 103.3
+                  finished_at: ''
+                  finished: false
+                  order_items:
+                    - ticket_id: '65954563'
+                      line: LE235
+                      class_id: 3
+                      class_name: Economy
+  /api/seats/change:
+    post:
+      tags:
+        - Seats
+      summary: Change Seat Assignment
+      operationId: seatsChange
+      description: |-
+        Changes seat assignments for tickets in an order. Each ticket can be assigned to a
+        specific seat in a specific car. The `scheme` field indicates the car type (e.g. `"ric"` for
+        RIC international coaches).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - tickets
+              properties:
+                tickets:
+                  type: string
+                  description: JSON array of seat assignment objects
+                  example: '[{"ticketId":"65954563","id":18928,"name":"32","car_id":161,"originalSeatId":18922,"originalSeatName":26,"class_id":7,"class_name":"economy sleeper","scheme":"ric","cateringStatus":"allowed"}]'
+                locale:
+                  type: string
+                  example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  order:
+                    type: string
+                    description: Order code
+                    example: '261657961965732'
+                  error:
+                    $ref: '#/components/schemas/Error'
+  /api/order/retrieve:
+    get:
+      tags:
+        - Booking
+      summary: Retrieve Current Order
+      operationId: orderRetrieve
+      description: Retrieves the current order for the active session. Requires session cookie.
+      parameters:
+        - in: query
+          name: locale
+          schema:
+            type: string
+          example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Full order object with items, pricing, and status
+  /api/order/prolong:
+    get:
+      tags:
+        - Booking
+      summary: Prolong Order (REST)
+      operationId: orderProlong
+      description: Extends the current order's validity timer via the REST session endpoint.
+      parameters:
+        - in: query
+          name: locale
+          schema:
+            type: string
+          example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+  /api/user/retrieve:
+    get:
+      tags:
+        - Session
+      summary: Retrieve User
+      operationId: userRetrieve
+      description: Returns the current user's login state and profile info.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: User profile or null/empty if not logged in
+  /api/currency/retrieve:
+    get:
+      tags:
+        - Session
+      summary: Retrieve Currency
+      operationId: currencyRetrieve
+      description: Returns the active currency for the current session.
+      parameters:
+        - in: query
+          name: locale
+          schema:
+            type: string
+          example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currency:
+                    type: string
+                    enum: [EUR, CZK, GBP, PLN, USD]
+                    example: EUR
+  /le#filteredDelays:
+    post:
+      tags:
+        - Live Data
+      summary: Filtered Live Train Positions
+      operationId: filteredDelays
+      description: |-
+        Like `delaysQuery` but with boolean filters for vehicle types.
+        Filters: `filterTrain` (Leo Express trains), `filterBus` (buses), `filterMinibus`,
+        `filterOrlickoTrain` (Orlicko regional trains), `filterPodunTrain` (Podunajsko regional trains).
+        Returns the same delay/GPS data structure.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query filteredDelaysQuery($filterTrain: Boolean, $filterBus: Boolean, $filterMinibus: Boolean, $filterOrlickoTrain: Boolean, $filterPodunTrain: Boolean, $locale: String) { filteredDelays(filters: {filterTrain: $filterTrain, filterBus: $filterBus, filterMinibus: $filterMinibus, filterOrlickoTrain: $filterOrlickoTrain, filterPodunTrain: $filterPodunTrain}, locale: $locale) { line_short line_name ride_id from from_st to to_st conf conf_st lat lng gps_time speed bearing acceleration departure_delay delay reservation stops { station_id station_name platform track } ride { stops { arrival departure station { id name } } } } }'
+              variables:
+                filterTrain: true
+                filterBus: false
+                filterMinibus: false
+                filterOrlickoTrain: true
+                filterPodunTrain: true
+                locale: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      filteredDelays:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DelayInfo'
+  /le#delaysByStation:
+    post:
+      tags:
+        - Live Data
+      summary: Delays by Station
+      operationId: delaysByStation
+      description: |-
+        Returns live delay/position data for all trains currently passing through or heading
+        to a specific station. Same response format as `delays` but filtered by station ID.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query delaysByStation($station: String, $locale: String, $token: String, $platform: String) { delaysByStation(station: $station, locale: $locale, token: $token, platform: $platform) { line_short line_name ride_id from from_st to to_st conf conf_st lat lng gps_time speed bearing acceleration departure_delay delay reservation stops { station_id station_name platform track } ride { stops { arrival departure station { id name } } } } }'
+              variables:
+                station: '5457076'
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      delaysByStation:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DelayInfo'
+  /le#currentDelays:
+    post:
+      tags:
+        - Live Data
+      summary: Current Delays (Legacy)
+      operationId: currentDelays
+      description: |-
+        Returns a simplified delay list with confirmed next stop and delay value.
+        Uses the older `Delay` type (without GPS coordinates). May return empty during
+        periods of no significant delays.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query currentDelays($locale: String, $token: String, $platform: String) { currentDelays(locale: $locale, token: $token, platform: $platform) { line ride_id from from_st to to_st conf conf_st conf_time delay } }'
+              variables:
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      currentDelays:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            line:
+                              type: string
+                            ride_id:
+                              type: string
+                            from:
+                              type: string
+                            from_st:
+                              type: string
+                            to:
+                              type: string
+                            to_st:
+                              type: string
+                            conf:
+                              type: string
+                            conf_st:
+                              type: string
+                            conf_time:
+                              type: string
+                            delay:
+                              type: number
+  /le#priceGarden:
+    post:
+      tags:
+        - Pricing
+      summary: Price Garden (Calendar Prices)
+      operationId: priceGarden
+      description: |-
+        Returns daily prices for a station pair over a date range, used for calendar-view
+        price displays. Requires a valid `currency` value (EUR, CZK, PLN).
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query priceGardenQuery($from: String, $to: String, $currency: String, $locale: String, $token: String, $platform: String) { priceGarden(from: $from, to: $to, currency: $currency, token: $token, locale: $locale, platform: $platform) { prices { id line_date station_from station_to price flag updated_at } error { code message } } }'
+              variables:
+                from: '8010101'
+                to: '8002041'
+                currency: EUR
+                locale: de
+                platform: website
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      priceGarden:
+                        type: object
+                        properties:
+                          prices:
+                            type: array
+                            nullable: true
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: integer
+                                line_date:
+                                  type: string
+                                  description: Date of the service
+                                station_from:
+                                  type: string
+                                station_to:
+                                  type: string
+                                price:
+                                  type: number
+                                flag:
+                                  type: string
+                                  nullable: true
+                                updated_at:
+                                  type: string
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /le#creditExchangeRates:
+    post:
+      tags:
+        - Pricing
+      summary: Credit Exchange Rates
+      operationId: creditExchangeRates
+      description: |-
+        Returns exchange rates used for Leo Express credit (loyalty points) conversions.
+        The `currency_ratio` indicates how many credits equal 1 unit of that currency.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query creditExchangeRatesQuery($locale: String, $token: String, $platform: String) { creditExchangeRates(locale: $locale, token: $token, platform: $platform) { date currency_code currency_ratio } }'
+              variables:
+                locale: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      creditExchangeRates:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            date:
+                              type: string
+                              format: date
+                              example: '2019-10-21'
+                            currency_code:
+                              type: string
+                              enum: [CZK, EUR, PLN]
+                              example: EUR
+                            currency_ratio:
+                              type: number
+                              description: Credits per 1 unit of currency
+                              example: 24
+  /le#getApplicationData:
+    post:
+      tags:
+        - Session
+      summary: Get Application Data
+      operationId: getApplicationData
+      description: |-
+        Returns internal API endpoints and the application token used for payment gateway calls.
+        No variables required.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query getApplicationDataQuery { getApplicationData { endpoint gpwebpay_endpoint gopay_endpoint payu_endpoint s24_endpoint application_token mallpay_endpoint } }'
+              variables: {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      getApplicationData:
+                        type: object
+                        properties:
+                          endpoint:
+                            type: string
+                            description: Main API base URL
+                            example: https://api.le.cz/api/v1
+                          gpwebpay_endpoint:
+                            type: string
+                            example: https://api.le.cz/gates/gpgate/create.php
+                          gopay_endpoint:
+                            type: string
+                            example: https://api.le.cz/gates/gopaygate/create.php
+                          payu_endpoint:
+                            type: string
+                            example: https://api.le.cz/gates/payu/create.php
+                          s24_endpoint:
+                            type: string
+                            example: https://api.le.cz/gates/servis24/create.php
+                          application_token:
+                            type: string
+                            description: Token used for payment gateway mutations
+                            example: symW412o-aS8g4
+                          mallpay_endpoint:
+                            type: string
+                            example: https://api.le.cz/gates/mallpay/create.php
+  /le#createGoPayPayment:
+    post:
+      tags:
+        - Payment
+      summary: Create GoPay Payment
+      operationId: createGoPayPayment
+      description: |-
+        Initiates a payment via GoPay gateway. Returns a redirect URL to the payment form.
+        Requires the `application_token` from `getApplicationData` as the `token` variable.
+
+        Payment channels: `PAYMENT_CARD`, `BANK_ACCOUNT`, `APPLE_PAY`, `BITCOIN`, `google`
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'mutation createGoPayPaymentMutation($order: String, $hash: String, $backUrl: String, $paymentChannel: String, $rebuy: Boolean, $locale: String, $token: String, $platform: String) { createGoPayPayment(order: $order, hash: $hash, backUrl: $backUrl, paymentChannel: $paymentChannel, rebuy: $rebuy, locale: $locale, token: $token, platform: $platform) { url error { code message } } }'
+              variables:
+                order: '43644629'
+                hash: e74874df516074d4a07feeda265cbed6
+                backUrl: https://www.leoexpress.com/de/bestellungreservierung?order=43644629&email=a.b%40c.de&orderDigest=TOKEN&registration=undefined
+                paymentChannel: PAYMENT_CARD
+                rebuy: false
+                locale: de
+                token: symW412o-aS8g4
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      createGoPayPayment:
+                        type: object
+                        properties:
+                          url:
+                            type: string
+                            description: Redirect URL to GoPay payment form
+                            example: https://gate.gopay.com/gw-ui/rest/v3/fc0c665c57351b80623c00748ec29600
+                          error:
+                            $ref: '#/components/schemas/Error'
+  /api/payment/choose-method:
+    post:
+      tags:
+        - Payment
+      summary: Submit Passenger Details & Choose Payment
+      operationId: paymentChooseMethod
+      description: |-
+        Submits passenger contact details (email, phone, name) and proceeds to payment step.
+        Returns the order code. Must be called before initiating a payment gateway redirect.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  description: Passenger email for ticket delivery
+                  example: passenger@example.com
+                phone:
+                  type: string
+                  description: Optional phone number
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                birthday:
+                  type: string
+                  description: Date of birth (optional)
+                clubmember:
+                  type: string
+                  description: Leo Express club membership ID (or "undefined")
+                bussinesTerms:
+                  type: string
+                  description: Terms acceptance flag
+                postRideEvaluation:
+                  type: string
+                  description: Opt-in for post-ride evaluation emails
+                  example: 'true'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderData:
+                    type: string
+                    description: Order code
+                    example: '261158547117240'
+                  clearCart:
+                    type: boolean
+                    example: false
+                  error:
+                    $ref: '#/components/schemas/Error'
+  /api/user/check:
+    post:
+      tags:
+        - Session
+      summary: Check User for Order
+      operationId: userCheck
+      description: |-
+        Verifies user association with an order using the order ID and digest token.
+        Used on the confirmation/reservation page after payment redirect.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - order
+                - orderDigest
+              properties:
+                order:
+                  type: string
+                  description: Order ID
+                  example: '43644629'
+                orderDigest:
+                  type: string
+                  description: Base64 digest token
+                  example: cW8vY1crbnp4K0lubk9uaWlQMFFjbFRTM0ZvNXBVc2Y2ZGFFcnNWRDBhdz0=
+                locale:
+                  type: string
+                  example: de
+                user:
+                  type: string
+                  description: User ID (empty for guest)
+                token:
+                  type: string
+                  description: Auth token (null for guest)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/co2/delete:
+    post:
+      tags:
+        - Booking
+      summary: Remove CO2 Compensation
+      operationId: co2Delete
+      description: Removes the optional CO2 compensation add-on from the current order.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                locale:
+                  type: string
+                  example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  parameters:
+    ContentType:
+      in: header
+      name: Content-Type
+      required: true
+      schema:
+        type: string
+      example: application/json
+    Origin:
+      in: header
+      name: Origin
+      schema:
+        type: string
+      example: https://www.leoexpress.com
+  schemas:
+    GraphQLRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: GraphQL query or mutation string
+        variables:
+          type: object
+          description: Variables for the GraphQL operation
+    Error:
+      type: object
+      nullable: true
+      properties:
+        code:
+          type: integer
+          example: 404
+        message:
+          type: string
+          example: No connections found
+    Carrier:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Leo Express
+        label:
+          type: string
+          example: Leo Express
+        logo:
+          type: string
+          nullable: true
+          description: Base64-encoded PNG carrier logo
+        spp_file:
+          type: string
+          nullable: true
+          description: SPP document file reference
+        spp:
+          type: string
+          nullable: true
+          description: Carrier legal entity / SPP description
+          example: Leo Express Global a.s. / Leo Express s.r.o.
+    Station:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Station ID (EVA number or internal code)
+          example: '8010366'
+        name:
+          type: string
+          example: Weimar
+        name_master:
+          type: string
+          description: Master name (canonical, unlocalized)
+          example: Weimar
+        name_lng:
+          type: string
+          description: Localized name
+          example: Weimar
+        country:
+          type: string
+          description: ISO country code (lowercase)
+          example: de
+        gps_lat:
+          type: string
+          description: Latitude
+          example: '50.979516'
+        gps_lon:
+          type: string
+          description: Longitude
+          example: '11.329819'
+        type:
+          type: string
+          description: Station type
+          enum: [station, bus]
+          example: station
+        timezone:
+          type: string
+          example: Europe/Berlin
+        parent_station:
+          type: object
+          nullable: true
+          description: Parent area/city grouping
+          properties:
+            short:
+              type: string
+            name:
+              type: string
+            country:
+              type: string
+            timezone:
+              type: string
+        priority:
+          type: integer
+          nullable: true
+        deleted_at:
+          type: integer
+          nullable: true
+        translations:
+          type: array
+          items:
+            type: object
+            properties:
+              locale:
+                type: string
+                example: de
+              name:
+                type: string
+                example: Weimar
+    DateTimeInfo:
+      type: object
+      properties:
+        date:
+          type: string
+          description: ISO 8601 datetime string
+          example: '2026-08-08 18:39:00.000000'
+        timezone_type:
+          type: integer
+          example: 3
+        timezone:
+          type: string
+          example: Europe/Berlin
+    SearchResults:
+      type: object
+      properties:
+        return_msg:
+          type: string
+        search_msg:
+          type: array
+          nullable: true
+          description: Informational messages about the search (e.g. disruptions, route notices)
+          items:
+            type: object
+            properties:
+              msg:
+                type: string
+                description: Message text
+              icon:
+                type: string
+                nullable: true
+              color_bg:
+                type: string
+                nullable: true
+                description: Background color hex code
+              color_bg_icon:
+                type: string
+                nullable: true
+              station_from:
+                $ref: '#/components/schemas/Station'
+              station_to:
+                $ref: '#/components/schemas/Station'
+        return_code:
+          type: integer
+          example: 0
+        date:
+          type: string
+          example: '08.08.2026'
+        timestamp:
+          type: integer
+          example: 1784647696
+        connections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Connection'
+        error:
+          $ref: '#/components/schemas/Error'
+    Connection:
+      type: object
+      properties:
+        origin:
+          $ref: '#/components/schemas/Station'
+        destination:
+          $ref: '#/components/schemas/Station'
+        departure:
+          type: integer
+          description: Departure as Unix timestamp
+          example: 1723135140
+        departure_time:
+          $ref: '#/components/schemas/DateTimeInfo'
+        arrival:
+          type: integer
+          description: Arrival as Unix timestamp
+          example: 1723193820
+        arrival_time:
+          $ref: '#/components/schemas/DateTimeInfo'
+        origin_country:
+          type: string
+          example: DE
+        destination_country:
+          type: string
+          example: PL
+        traveltime:
+          type: integer
+          description: Travel time in seconds
+          example: 58680
+        totaltime:
+          type: integer
+          description: Total time including transfers in seconds
+          example: 58680
+        distance:
+          type: integer
+          description: Distance in meters
+          example: 1193000
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/Line'
+        transfers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transfer'
+        classes:
+          type: array
+          description: Available travel classes for this connection
+          items:
+            $ref: '#/components/schemas/TravelClass'
+        class_info:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassInfo'
+        top_combination:
+          type: object
+          description: Best price combination across lines
+          properties:
+            total:
+              type: number
+              example: 103.3
+            basictotal:
+              type: number
+              example: 103.3
+            lines:
+              type: array
+              items:
+                type: object
+                properties:
+                  line:
+                    type: string
+                  class_id:
+                    type: integer
+                  short:
+                    type: string
+                  name:
+                    type: string
+        msg:
+          type: string
+          nullable: true
+        currency:
+          type: string
+          example: EUR
+        hash:
+          type: string
+          description: Connection hash used to create an order via /api/order/process-order
+          example: c36bc540e222639be02de0ab08344c1f
+        d2d_info:
+          type: object
+          nullable: true
+          properties:
+            dropoff:
+              type: string
+              nullable: true
+            pickup:
+              type: string
+              nullable: true
+
+    Line:
+      type: object
+      properties:
+        line_id:
+          type: string
+          example: LE235
+        origin:
+          type: string
+          description: Origin station ID for this leg
+          example: '8010366'
+        destination:
+          type: string
+          description: Destination station ID for this leg
+          example: '5102825'
+        departure:
+          type: integer
+          description: Departure Unix timestamp
+          example: 1723135140
+        arrival:
+          type: integer
+          description: Arrival Unix timestamp
+          example: 1723193820
+        departure_time:
+          $ref: '#/components/schemas/DateTimeInfo'
+        arrival_time:
+          $ref: '#/components/schemas/DateTimeInfo'
+        distance:
+          type: integer
+          description: Distance in meters
+          example: 1193000
+        type:
+          type: string
+          description: Transport type
+          example: train
+        ride_id:
+          type: string
+          example: '1081846'
+        carrier_id:
+          type: integer
+          example: 1
+        line_stops:
+          type: array
+          description: Intermediate stops on this line
+          items:
+            type: object
+            properties:
+              station:
+                type: object
+                properties:
+                  name_master:
+                    type: string
+                    example: Leipzig Hbf (tief)
+                  country:
+                    type: string
+                    example: DE
+                  name:
+                    type: string
+                    example: Leipzig Hbf (tief)
+                  translations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        locale:
+                          type: string
+                        name:
+                          type: string
+        services:
+          type: array
+          description: Available services on this line (e.g. bicycle)
+          items:
+            type: object
+            properties:
+              count:
+                type: integer
+              capacity:
+                type: integer
+              price:
+                type: number
+              service_id:
+                type: string
+                description: 'Service ID (e.g. "4" = bicycle)'
+                example: '4'
+        info:
+          type: object
+          properties:
+            facility:
+              type: array
+              items:
+                type: object
+                properties:
+                  class_id:
+                    type: integer
+                  values:
+                    type: array
+                    items:
+                      type: string
+            delay:
+              type: object
+              nullable: true
+              properties:
+                delay:
+                  type: integer
+                  description: Delay in minutes
+                last_seen:
+                  type: string
+                ride_id:
+                  type: string
+            notice:
+              type: array
+              items:
+                type: object
+                properties:
+                  header:
+                    type: string
+                  message:
+                    type: string
+                  type:
+                    type: string
+                  type_id:
+                    type: integer
+                  from:
+                    type: string
+                  to:
+                    type: string
+                  show_date:
+                    type: boolean
+        classes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TravelClass'
+        class_info:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassInfo'
+        line_obj:
+          type: object
+          properties:
+            short:
+              type: string
+              example: LE235
+            name:
+              type: string
+              example: LE235
+            type:
+              type: string
+              example: train
+            carrier_id:
+              type: integer
+              description: Carrier ID
+              example: 1
+            carrier:
+              $ref: '#/components/schemas/Carrier'
+            name_required:
+              type: boolean
+              description: Whether passenger names are required for this line
+            transport_type:
+              type: integer
+              description: 'Transport type code (0=train, 1=bus, 2=minibus)'
+            info:
+              type: object
+              nullable: true
+              properties:
+                facilities:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      class_id:
+                        type: integer
+                      values:
+                        type: array
+                        items:
+                          type: integer
+                name_required:
+                  type: boolean
+        scheme:
+          type: string
+          description: Car scheme identifier
+          enum: [ric, flirt, talgo, lint-long, bus]
+          example: ric
+    Transfer:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        type:
+          type: string
+          example: walk
+        subtype:
+          type: string
+          nullable: true
+        time:
+          type: integer
+          description: Transfer time in minutes
+          example: 10
+        distance:
+          type: integer
+          nullable: true
+          description: Transfer distance in meters
+        station_from:
+          $ref: '#/components/schemas/Station'
+        station_to:
+          $ref: '#/components/schemas/Station'
+        line_from:
+          type: string
+        line_to:
+          type: string
+        area:
+          type: object
+          nullable: true
+          description: Area/city the transfer takes place in
+          properties:
+            short:
+              type: string
+            name:
+              type: string
+            country:
+              type: string
+            timezone:
+              type: string
+    TravelClass:
+      type: object
+      description: |-
+        Travel class definition. Known classes:
+        - id:1, BUS = Business (FLIRT, RIC, Talgo)
+        - id:2, PRE = Premium (FLIRT only, 6-seat quiet compartment)
+        - id:3, ECO = Economy (all vehicle types)
+        - id:4, ECOPLUS = Economy Plus (FLIRT only, ergonomic seats + included refreshments)
+        - id:7, ECOSLEEPER = Economy Sleeper (RIC night train only)
+        - id:8, ECOSLEEPERLADY = Economy Sleeper Lady (RIC night train only)
+      properties:
+        id:
+          type: integer
+          example: 3
+        short:
+          type: string
+          example: ECO
+        name:
+          type: string
+          example: Economy
+        kontent_hashtag:
+          type: string
+          description: Content identifier for class-specific UI/info
+          example: economy_train_ric
+    ClassInfo:
+      type: object
+      properties:
+        record_id:
+          type: string
+        capacity:
+          type: integer
+          description: Total capacity
+        max_capacity:
+          type: integer
+          description: Maximum capacity (including standing)
+        standing:
+          type: integer
+          description: Standing places available
+        occupied:
+          type: integer
+          description: Currently occupied seats
+        total:
+          type: number
+          description: Total price for all passengers
+          example: 103.3
+        basictotal:
+          type: number
+          description: Base total without discounts
+          example: 103.3
+        groupTotal:
+          type: number
+          nullable: true
+        guaranted:
+          type: boolean
+          description: Whether seat is guaranteed
+        co2:
+          type: number
+          description: CO2 emissions in kg
+        cashback:
+          type: number
+          nullable: true
+          description: Cashback amount in Leo Credits
+        optimized:
+          type: boolean
+          nullable: true
+          description: Whether this is an optimized price combination
+        is_promo:
+          type: boolean
+          nullable: true
+          description: Whether this is a promotional price
+        rates:
+          type: array
+          items:
+            type: object
+            properties:
+              record_id:
+                type: string
+              price:
+                type: number
+                description: Price per passenger
+                example: 35.4
+              basicprice:
+                type: number
+                example: 35.4
+              groupPrice:
+                type: number
+                nullable: true
+              count:
+                type: integer
+                description: Number of passengers at this rate
+                example: 1
+        passengers:
+          type: array
+          items:
+            type: object
+
+    DelayInfo:
+      type: object
+      properties:
+        line_short:
+          type: string
+          example: LE235
+        line_name:
+          type: string
+          example: LE235
+        ride_id:
+          type: string
+          example: '1081846'
+        from:
+          type: string
+          description: Origin station name
+          example: Weimar
+        from_st:
+          type: string
+          description: Origin station ID
+          example: '8010366'
+        to:
+          type: string
+          description: Destination station name
+          example: Przemyśl Zasanie
+        to_st:
+          type: string
+          description: Destination station ID
+          example: '5102825'
+        conf:
+          type: string
+          description: Confirmed next stop name
+        conf_st:
+          type: string
+          description: Confirmed next stop ID
+        lat:
+          type: number
+          format: double
+          description: Current latitude
+          example: 50.9795
+        lng:
+          type: number
+          format: double
+          description: Current longitude
+          example: 11.3298
+        gps_time:
+          type: string
+          description: GPS timestamp
+        speed:
+          type: number
+          description: Current speed in km/h
+          example: 120.5
+        bearing:
+          type: number
+          description: Heading in degrees
+          example: 90.0
+        acceleration:
+          type: number
+          description: Acceleration
+          example: 0.0
+        departure_delay:
+          type: integer
+          description: Departure delay in minutes
+          example: 0
+        delay:
+          type: integer
+          description: Current delay in minutes
+          example: 5
+        reservation:
+          type: boolean
+        stops:
+          type: array
+          items:
+            type: object
+            properties:
+              station_id:
+                type: string
+              platform:
+                type: string
+                nullable: true
+              track:
+                type: string
+                nullable: true
+        ride:
+          type: object
+          properties:
+            stops:
+              type: array
+              items:
+                type: object
+                properties:
+                  arrival:
+                    type: string
+                    description: Arrival time (HH:mm or datetime)
+                  departure:
+                    type: string
+                    description: Departure time (HH:mm or datetime)
+                  station:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+    Car:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 161
+        name:
+          type: string
+          description: 'Car name (e.g. "RIC B4-1" for couchette cars)'
+          example: RIC B4-1
+        map_id:
+          type: integer
+        car_map:
+          type: string
+          description: Base64-encoded SVG of the car layout
+        short_name:
+          type: string
+          example: B4-1
+        classes:
+          type: array
+          description: Class IDs available in this car
+          items:
+            type: integer
+          example: [7, 8]
+        order:
+          type: integer
+          description: Car order in the train
+          example: 1
+        free_seats:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                description: Seat ID for assignment
+                example: 18928
+              name:
+                type: string
+                description: Seat number/name
+                example: '32'
+              seat_info:
+                type: string
+                nullable: true
+              car_id:
+                type: integer
+                example: 161
+              seat_type:
+                type: string
+              class_id:
+                type: integer
+                description: Class this seat belongs to
+                example: 7
+        seat_msg:
+          type: string
+          nullable: true
+    PaymentMethod:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: |-
+            Payment method ID. Known values:
+            - 32: Google Pay
+            - 101: Bankomatkarte / PAYMENT_CARD
+            - 134: Bank transfer / BANK_ACCOUNT
+            - 143: Apple Pay
+            - 144: Kryptowährungen / BITCOIN
+          example: 101
+        name_lng:
+          type: string
+          example: Bankomatkarte
+        description_lng:
+          type: string
+        image:
+          type: string
+          description: URL or path to payment method icon
+        subtype:
+          type: string
+          example: PAYMENT_CARD
+        type:
+          type: string
+          example: card
+        currency:
+          type: string
+          example: EUR
+        amount:
+          type: number
+          description: Amount to pay with this method
+          example: 103.3
+        allow_combined:
+          type: boolean
+          description: Whether this can be combined with other methods
+        combined_amount:
+          type: number
+          nullable: true
+        combined_leo_amount:
+          type: number
+          nullable: true
+        co2compensation:
+          type: boolean
+        show_on_click:
+          type: boolean
+    TimeTicket:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        currency_id:
+          type: integer
+        carriers:
+          type: array
+          items:
+            type: integer
+        validity:
+          type: integer
+          description: Validity in days
+        tax:
+          type: number
+        country:
+          type: string
+        valid_from:
+          type: string
+          format: date
+        valid_to:
+          type: string
+          format: date
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        deleted_at:
+          type: string
+          nullable: true
+        prices:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              class_id:
+                type: integer
+              price:
+                type: number
+              price_oneway:
+                type: number
+    OrderServiceItem:
+      type: object
+      properties:
+        order_item:
+          type: string
+          description: Order item/ticket ID
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              short:
+                type: string
+              capacity:
+                type: integer
+              price:
+                type: number
+              external:
+                type: boolean
+              show_detail:
+                type: boolean
+              deleted_at:
+                type: string
+                nullable: true
+              validity:
+                type: object
+                nullable: true
+                properties:
+                  from:
+                    type: string
+                  to:
+                    type: string
+              pdf:
+                type: string
+                nullable: true
+    ProcessOrderResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+        order:
+          type: object
+          properties:
+            id:
+              type: string
+              example: '43644505'
+            code:
+              type: string
+              description: Order code used in subsequent API calls
+              example: '261709449551281'
+            digest:
+              type: string
+              description: Base64-encoded token required for payment method queries
+              example: ZXhhbXBsZURpZ2VzdFRva2VuPT0=
+            valid:
+              type: boolean
+              example: true
+            price:
+              type: number
+              description: Total order price
+              example: 103.3
+            finished_at:
+              type: string
+              description: Completion timestamp (empty if not yet paid)
+              example: ''
+            finished:
+              type: boolean
+              example: false
+            order_items:
+              type: array
+              items:
+                type: object
+                properties:
+                  ticket_id:
+                    type: string
+                    example: '65954563'
+                  line:
+                    type: string
+                    example: LE235
+                  class_id:
+                    type: integer
+                    example: 3
+                  class_name:
+                    type: string
+                    example: Economy
+    PersonArgument:
+      type: object
+      description: |-
+        Passenger type definition. Known types:
+        - adult: Standard adult
+        - child: Junior 6–17 years (50% discount in CZ Economy only; 25% cashback outside CZ for Smile Club)
+        - pram: Infant in pram (free)
+        - child6: Child 0–5 years (100% free in CZ all classes; no discount outside CZ)
+        - student: Student up to 25 (50% in CZ Economy; 25% cashback outside CZ). ISIC required 15+.
+        - senior: Senior 65+ (50% in CZ Economy; 25% cashback outside CZ)
+
+        International routes: 50% discount applies proportionally to CZ route portion only.
+        Example: 50% CZ + 50% abroad = 25% total discount.
+        - student: Student
+        - senior: Senior
+      properties:
+        name:
+          type: string
+          enum: [adult, child, pram, child6, student, senior]
+          example: adult
+        cards:
+          type: array
+          description: |-
+            Discount card codes. Known values:
+            - isic: Student/Lehrer (ISIC)
+            - interrailbus: Interrail/Eurail 1. Klasse
+            - interraileco: Interrail/Eurail 2. Klasse
+            - handicap3: Behinderte des 3. Grades
+            - wheel: ZTP Person mit Rollstuhl
+            - ztpwheelp: ZTP Person mit Rollstuhl und Begleitung
+            - ztpandp: ZTP Person mit Begleitung
+            - ztpanddog: ZTP Person mit Assistenzhund
+            - wheelsk: ŤZP Rollstuhl
+            - tzp: ŤZP Ausweis (Basis)
+            - tzpwheelp: ŤZP mit Rollstuhl und Behindertenführer
+            - tzpandp: ŤZP mit Behindertenführer
+
+            Rules:
+            - ZTP/ZTP-P (Czech): 75% discount, Economy class only, Czech routes only. Companion rides free.
+            - ŤZP/ŤZP-S (Slovak): 0% fare discount, but 25% cashback in Leo Credits (Economy, entire route).
+            - Wheelchair transported free of charge.
+            - Companion OR assistance dog, not both simultaneously.
+          items:
+            type: string
+            enum: [isic, interrailbus, interraileco, handicap3, wheel, ztpwheelp, ztpandp, ztpanddog, wheelsk, tzp, tzpwheelp, tzpandp]
+          example: []
+    ServiceArgument:
+      type: object
+      description: |-
+        Service request. Known service IDs:
+        - "4": Bicycle (count=1 to request, count=0 to skip)
+      properties:
+        service_id:
+          type: string
+          example: '4'
+        count:
+          type: integer
+          description: Number of this service requested
+          example: 1
+    Tariff:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '3'
+        short:
+          type: string
+          description: Short code used in `persons[].name` or `persons[].cards[]`
+          example: adult
+        combine:
+          type: integer
+          description: Whether this tariff can be combined with others
+        ztp_allowed:
+          type: boolean
+          description: Whether ZTP discounts apply
+        ztp_child_allowed:
+          type: boolean
+        disable_for:
+          type: array
+          nullable: true
+          description: List of tariff shorts this one is incompatible with
+          items:
+            type: string
+        age_min:
+          type: integer
+          example: 0
+        age_max:
+          type: integer
+          example: 199
+        name_lng:
+          type: string
+          description: Localized tariff name
+          example: Erwachsener
+        description_lng:
+          type: string
+          nullable: true
+          description: Localized description with discount rules
+        country:
+          type: string
+          nullable: true
+          description: Country restriction (null = all countries)
+        lang:
+          type: string
+          nullable: true
+        selectable:
+          type: integer
+        validity:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+        subrates:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              short:
+                type: string
+              name_lng:
+                type: string
+              description_lng:
+                type: string
+        show_type:
+          type: integer
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '4'
+        name:
+          type: string
+        name_lng:
+          type: string
+          description: Localized service name
+          example: Beförderung von Fahrrädern
+        short:
+          type: string
+          example: BIKE
+        capacity:
+          type: integer
+          description: Maximum capacity per ride
+          example: 4
+        price:
+          type: number
+          nullable: true
+          description: Price (null = included in ticket or variable)
+        external:
+          type: boolean
+        show_detail:
+          type: boolean
+        deleted_at:
+          type: string
+          nullable: true
+        validity:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                example: '1.1.'
+              to:
+                type: string
+                example: '31.12.'
+        pdf:
+          type: boolean
+    Facility:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '5'
+        name:
+          type: string
+          description: Localized facility name
+          example: W-LAN
+    Ride:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '1077158'
+        date:
+          type: string
+          format: date
+          example: '2026-07-22'
+        departure:
+          type: string
+          description: First departure time
+        arrival:
+          type: string
+          description: Final arrival time
+        capacity:
+          type: integer
+        note:
+          type: string
+          nullable: true
+        line:
+          type: object
+          properties:
+            short:
+              type: string
+              example: LE1258
+            name:
+              type: string
+              example: LE1258
+            type:
+              type: string
+              example: train
+            carrier_id:
+              type: integer
+            carrier:
+              $ref: '#/components/schemas/Carrier'
+            transport_type:
+              type: integer
+              description: 'Transport type code (0=train)'
+        scheme:
+          type: string
+          description: Car scheme (e.g. "ric" for RIC international coaches)
+          enum: [ric, flirt, talgo, lint-long, bus]
+          example: ric
+        stops:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              arrival:
+                type: string
+                example: '2026-07-22 10:04:00'
+              departure:
+                type: string
+                example: '2026-07-22 10:06:00'
+              distance:
+                type: integer
+                description: Distance from origin in meters
+                example: 352000
+              station:
+                $ref: '#/components/schemas/Station'
+        cars:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Car'
+    TimeTable:
+      type: object
+      properties:
+        line:
+          type: object
+          properties:
+            name:
+              type: string
+              example: LE235
+            type:
+              type: string
+              example: train
+            carrier:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+            route:
+              type: object
+              nullable: true
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+        calendar:
+          type: object
+          properties:
+            date_from:
+              type: string
+              format: date
+            date_to:
+              type: string
+              format: date
+            days:
+              type: array
+              description: 'Weekdays the service runs (1=Mon, 7=Sun)'
+              items:
+                type: integer
+            exception_plus:
+              type: string
+              nullable: true
+              description: Additional dates the service runs (comma-separated)
+            exception_minus:
+              type: string
+              nullable: true
+              description: Dates the service does NOT run (comma-separated)
+        stations:
+          type: array
+          items:
+            type: object
+            properties:
+              station:
+                $ref: '#/components/schemas/Station'
+              name:
+                type: string
+              arrival_time:
+                type: string
+                description: Arrival time (HH:mm)
+              departure_time:
+                type: string
+                description: Departure time (HH:mm)
+              distance:
+                type: integer
+              can_in:
+                type: string
+                description: Whether passengers can board here
+              can_out:
+                type: string
+                description: Whether passengers can alight here
+              exception:
+                type: string
+                nullable: true
+    OrderResponse:
+      type: object
+      properties:
+        order:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              example: '43663293'
+            code:
+              type: string
+              description: Order code used in subsequent API calls
+              example: '261991397251110'
+            digest:
+              type: string
+              description: Base64-encoded token required for payment method queries
+              example: eTdxaEFFRmZZWHFzdDYxSGpiS3h3N29kcDhIK0Vqb1V1cVgzeUtCTm5WTT0=
+            valid:
+              type: boolean
+            price:
+              type: number
+              example: 37.5
+            finished:
+              type: boolean
+            finished_at:
+              type: string
+            currency:
+              type: string
+              example: EUR
+            co2compensation:
+              type: number
+            co2compensationBought:
+              type: number
+            order_items:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  code:
+                    type: string
+                  count:
+                    type: integer
+                  price:
+                    type: number
+                  priceSum:
+                    type: number
+                  stornable:
+                    type: boolean
+                  type:
+                    type: string
+                    example: ticket
+                  tickets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        departure_date:
+                          type: string
+                          example: '2026-08-08 18:59:00'
+                        arrival_date:
+                          type: string
+                          example: '2026-08-09 11:20:00'
+                        class_id:
+                          type: integer
+                        seat:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                              example: '17'
+                            short_name:
+                              type: string
+                              description: 'Car/Seat format'
+                              example: '1/17'
+                            class_id:
+                              type: integer
+                            class_short:
+                              type: string
+                              example: ECOSLEEPERLADY
+                        station_from:
+                          $ref: '#/components/schemas/Station'
+                        station_to:
+                          $ref: '#/components/schemas/Station'
+                        line:
+                          type: object
+                          properties:
+                            short:
+                              type: string
+                            name:
+                              type: string
+                            type:
+                              type: string
+                        scheme:
+                          type: string
+        error:
+          $ref: '#/components/schemas/Error'
