@@ -18,11 +18,13 @@ Booking API for [nightjet.com](https://www.nightjet.com), including:
 Booking API for [europeansleeper.eu](https://www.europeansleeper.eu), including:
 - `/constants` endpoint with full station/route/pricing configuration
 - Train search and multi-currency availability (EUR, CZK, GBP, JPY, USD)
-- Booking creation with fare types (easy-night, good-night, flex-night)
-- Payment via Pay.nl
+- Full booking flow (search → availability → upsert → checkout via Pay.nl)
+- 3 fare types: easy-night, good-night, flex-night
 - 3 routes: Brussels–Prague, Brussels–Milan (from Sep 2026), Paris–Berlin
-- Accommodation types: seats, couchette-5, berth (single/double/triple), comfort (single/double/triple), women-only variants
-- Add-ons: bicycle, breakfast (14€), pets (29.99€)
+- Accommodation types: seats, couchette (4/5/6-berth), berth (single/double/triple), comfort (single/double/triple), women-only variants
+- Interrail/Eurail reservations on all routes (21€ seat, 74€ couchette, 99–269€ private)
+- Add-ons: bicycle (seasonal), breakfast (14€), pets (29.99€, private compartments only)
+- Deep links with URL parameters for pre-filled search
 
 ### Leo Express (`leo-express-api.yaml`)
 Booking API for [leoexpress.com](https://www.leoexpress.com), including:
