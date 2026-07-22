@@ -1,7 +1,25 @@
 ﻿openapi: 3.0.0
 info:
   title: European Sleeper API
-  version: 1.0.0
+  version: 1.1.0
+  description: |-
+    Booking API for [europeansleeper.eu](https://www.europeansleeper.eu).
+
+    ## Routes
+
+    | Route | Train | From | Schedule |
+    |-------|-------|------|----------|
+    | Brussels–Prague | 453 | 0001-01-01 | Bruxelles Midi → Antwerpen → NL → Berlin → Dresden → Bad Schandau → Děčín → Ústí nad Labem → Praha hl.n. |
+    | Brussels–Milan | 401 | 2026-09-09 | Bruxelles Midi → Liège → Aachen → Köln → (NL from Dec 13) → CH (Aarau, Zürich, Göschenen, Arth-Goldau, Bellinzona, Lugano, Chiasso) → Como → Milano Porta Garibaldi |
+    | Paris–Berlin | 475 | 2026-03-26 | Paris-Nord → Aulnoye → Mons → Bruxelles Midi → Liège → Hamburg-Harburg → Berlin Ostbahnhof → Berlin Hbf |
+
+    ## Authentication
+
+    No authentication required for search and availability endpoints. Booking endpoints use session-based auth (cookie from /booking/upsert response).
+
+    ## Currencies
+
+    Prices available in EUR, CZK, GBP, JPY, USD. Currency selection at checkout via integer code (1=EUR, 2=CZK, 3=GBP, 4=JPY, 5=USD).
 servers:
   - url: https://europeansleeperprod-api.azurewebsites.net/api
 paths:
@@ -37,7 +55,7 @@ paths:
                       maxReservationDate:
                         type: string
                         format: date
-                        example: '2027-01-03'
+                        example: '2027-03-18'
                       bicycleReservationDates:
                         type: array
                         items:
@@ -138,6 +156,11 @@ paths:
                   maxBicycleAmount:
                     type: integer
                     example: 5
+                  referralDiscount:
+                    description: referral discount percentage (null if disabled)
+                    type: integer
+                    nullable: true
+                    example: null
                   pricesBreakfastInCents:
                     description: breakfast price in cents per currency
                     type: object
@@ -201,7 +224,10 @@ paths:
                                 format: date-time
                                 nullable: true
                               mappedStationId:
-                                description: actual boarding station if this is a virtual/grouped stop (null = boards here)
+                                description: |-
+                                  actual boarding station if this station is not directly served.
+                                  Passengers must arrange own transfer. Example: Breda (8400131) maps to Roosendaal (8400526).
+                                  null = train stops here directly.
                                 type: string
                                 nullable: true
   /search/trains:
@@ -638,10 +664,22 @@ components:
             unique alphanumerical booking code (format: XXXX-XXXX)
           type: string
           example: GWL5-MHPC
+        currency:
+          description: |-
+            currency selection (null before checkout):
+            - 1 = EUR
+            - 2 = CZK
+            - 3 = GBP
+            - 4 = JPY
+            - 5 = USD
+          type: integer
+          nullable: true
+          example: 1
         state:
           description: |-
-            booking state as integer;
-            observed value: 0 (likely represents active/pending; other values undocumented)
+            booking state:
+            - 0 = pending (reservation created, awaiting payment)
+            - 4 = confirmed (paid)
           type: integer
           minimum: 0
           example: 0
@@ -691,21 +729,31 @@ components:
         placeType:
             description: requested sub-category of comfort class
             type: string
-            enum: [seat-second-class, seat-second-class-private, couchette-4, couchette-6, couchette-6-private, couchette-4-women-only, berth-single, berth-double, berth-triple, berth-triple-women-only]
-            example: couchette-6
+            enum: [seat-second-class, couchette-4, couchette-4-women-only, couchette-5, couchette-5-women-only, couchette-5-private, couchette-6, couchette-6-private, berth-single, berth-double, berth-triple, berth-triple-women-only, comfort-single, comfort-double, comfort-triple, comfort-triple-women-only]
+            example: couchette-5
         fareType:
           description: requested ticket type
           type: string
           enum: [easy-night, good-night, flex-night]
           example: flex-night
         departureStationId:
-          description: 7-digit EVA number of departure station
+          description: 7-digit EVA number of actual departure station
           type: string
-          example: 8800104
+          example: "8010102"
+        requestedDepartureStationId:
+          description: 7-digit EVA number of originally requested departure station (null if no detour)
+          type: string
+          nullable: true
+          example: "8010100"
         arrivalStationId:
-          description: 7-digit EVA number of arrival station
+          description: 7-digit EVA number of actual arrival station
           type: string
-          example: 8010102
+          example: "8700012"
+        requestedArrivalStationId:
+          description: 7-digit EVA number of originally requested arrival station (null if no detour)
+          type: string
+          nullable: true
+          example: "8700015"
         departureTime:
           description: departure date and time (YYYY-MM-DDTHH:mm:ss)
           type: string
@@ -730,6 +778,33 @@ components:
             $ref: '#/components/schemas/PassengerReservation'
         bicycleReservations:
           $ref: '#/components/schemas/BicycleReservation'
+        breakfastReservations:
+          description: breakfast add-on reservations with prices
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              prices:
+                type: object
+                properties:
+                  eur:
+                    type: number
+                  czk:
+                    type: number
+                  gbp:
+                    type: number
+                  jpy:
+                    type: number
+                  usd:
+                    type: number
+        petReservations:
+          description: pet reservations (private compartments only, max 2)
+          type: array
+          items:
+            type: object
         allPassengersInSameCompartment:
           description: indicates whether all passengers have seat reservations in the same compartment
           type: boolean
@@ -904,11 +979,37 @@ components:
           type: string
           format: uuid
           example: 7f47a671-3763-4bcb-08c1-08db71b8ba72
-        price:
-          description: price of entire reservation in Euro (€)
+        prices:
+          description: total price for entire reservation per currency
+          type: object
+          properties:
+            eur:
+              type: number
+              example: 429.98
+            czk:
+              type: number
+            gbp:
+              type: number
+            jpy:
+              type: number
+            usd:
+              type: number
+        originalPrices:
+          description: original prices before discount (null if no discount applied)
+          type: object
+          nullable: true
+        referralName:
+          description: referral code holder name (null if no referral)
+          type: string
+          nullable: true
+        referralCode:
+          description: referral code used (null if none)
+          type: string
+          nullable: true
+        discountPercentage:
+          description: discount percentage applied (null if none)
           type: integer
-          minimum: 0
-          example: 159
+          nullable: true
         passengers:
           type: array
           items:
@@ -933,32 +1034,44 @@ components:
           example: 72
         tariff:
           description: |-
-            tariff for passenger type (incomplete/unconfirmed); maybe tied to length of trip? similar values to passengerType:
+            tariff for passenger type:
             - 44 = Interrail / Eurail
-            - 64 = Adult, Booker did not travel
-            - 72 = Adult
-            - 73 = Child (4-11 years old):
-            - 87 = 1 Adult, 1 Child, Booker did not travel
+            - 65 = Adult (standard)
+            - 72 = Adult (legacy)
+            - 73 = Child (4-11 years old)
           type: integer
-          enum: [44, 64, 72, 73, 87]
-          example: 72
+          example: 65
         coachNumber:
           description: number of train car housing reserved seat/place
           type: string
-          example: 8
+          example: "30"
         compartmentNumber:
           description: number of train compartment housing reserved seat/place
           type: string
-          example: 8
+          example: "5"
         place:
           description: number of reserved seat/place
           type: string
-          example: 83
-        price:
-          description: price of reservation for passenger in Euro (€)
-          type: integer
-          minimum: 0
-          example: 159
+          example: "51"
+        prices:
+          description: price per currency for this passenger
+          type: object
+          properties:
+            eur:
+              type: number
+              example: 219.99
+            czk:
+              type: number
+            gbp:
+              type: number
+            jpy:
+              type: number
+            usd:
+              type: number
+        originalPrices:
+          description: original prices before discount (null if no discount)
+          type: object
+          nullable: true
     PersonalDetails:
       description: |-
         personal details (necessary for at least one person within travel party, optional for additional adults, not allowed to submit for children)
@@ -994,9 +1107,13 @@ components:
           type: string
           enum:
             - seat-second-class
+            - couchette-4
+            - couchette-4-women-only
             - couchette-5
             - couchette-5-women-only
             - couchette-5-private
+            - couchette-6
+            - couchette-6-private
             - berth-single
             - berth-double
             - berth-triple
@@ -1151,9 +1268,13 @@ components:
             type: string
             enum:
               - seat-second-class
+              - couchette-4
+              - couchette-4-women-only
               - couchette-5
               - couchette-5-women-only
               - couchette-5-private
+              - couchette-6
+              - couchette-6-private
               - berth-single
               - berth-double
               - berth-triple
@@ -1177,10 +1298,10 @@ components:
           type: string
           format: uuid
           example: 77ab1c5a-ea0b-4634-7cdd-08db0daabe3f
-        departureTime:
+        departureDateTime:
           description: departure date and time (YYYY-MM-DDTHH:mm:ss)
           type: string
-          example: 2023-06-23T18:01:00
+          example: "2026-09-14T19:22:00"
         trip:
           $ref: '#/components/schemas/Trip'
         showNoTrainsOnRequestDayAlert:
@@ -1245,28 +1366,29 @@ components:
           type: string
           example: 0001-01-01T00:00:00
     TrainSearch:
-      description: a JSON object containing search details
+      description: |-
+        a JSON object containing search details.
+        
+        Both camelCase (fromLocationId) and PascalCase (FromLocationId) field names are accepted.
       type: object
       properties:
         fromLocationId:
           description: 7-digit EVA number of departure station
           type: string
-          example: 8800104
+          example: "8800104"
         toLocationId:
           description: 7-digit EVA number of arrival station
           type: string
-          example: 8010100
+          example: "8010100"
         departureDate:
-          description: departure ISO datetime
+          description: departure date (YYYY-MM-DD or ISO datetime YYYY-MM-DDTHH:mm:ss.000Z)
           type: string
-          format: date-time
-          example: 2023-06-23T00:00:00.000Z
+          example: "2026-07-22T00:00:00.000Z"
         returnDate:
-          description: return journey ISO datetime (or null if no return journey was requested)
+          description: return journey date (or null if no return journey)
           type: string
-          format: date-time
           nullable: true
-          example: 2023-06-24T00:00:00.000Z
+          example: null
         passengerTypes:
           description: |-
             list of requested passenger types; possible values:
@@ -1282,7 +1404,13 @@ components:
           description: number of requested bicycle spaces
           type: integer
           minimum: 0
-          maximum: 6
+          maximum: 5
+          example: 0
+        petsCount:
+          description: number of requested pet spaces
+          type: integer
+          minimum: 0
+          maximum: 2
           example: 0
     TrainSearchResult:
       description: JSON object containing results of train search
@@ -1328,23 +1456,23 @@ components:
         trainNumber:
           description: train number (without type)
           type: string
-          example: 453
+          example: "453"
         travelDate:
-          description: travel date and time (YYYY-MM-DDTHH:mm:ss)
+          description: travel date (YYYY-MM-DD)
           type: string
-          example: 2023-06-23T00:00:00
+          example: "2026-09-14"
         arrivalTime:
           description: arrival date and time (YYYY-MM-DDTHH:mm:ss)
           type: string
-          example: 2023-06-24T07:03:00
+          example: "2026-09-15T10:51:00"
         fromLocationId:
           description: 7-digit EVA number of departure station
           type: string
-          example: 8800104
+          example: "8800104"
         toLocationId:
           description: 7-digit EVA number of arrival station
           type: string
-          example: 8010100
+          example: "5457076"
         passengerTypes:
           description: list of requested passenger types
           type: array
@@ -1379,5 +1507,9 @@ components:
           description: indicates whether journey takes place over night (date change?)
           type: boolean
           example: true
+        isDiningCarAvailable:
+          description: indicates whether a dining car is available on this service
+          type: boolean
+          example: false
         detourInfo:
           $ref: '#/components/schemas/DetourInfo'
