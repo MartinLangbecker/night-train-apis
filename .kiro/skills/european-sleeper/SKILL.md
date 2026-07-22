@@ -54,9 +54,9 @@ Detour stations (e.g. 8010102 Berlin-Gesundbrunnen, 8700012 Paris-Est) are not i
 - 44 = Interrail/Eurail
 
 ## Interrail Availability
-- Brussels–Prague: ✅
+- Brussels–Prague: ✅ (seat 21€, couchette-5 74€, berth-triple 109€, comfort-triple 99€)
 - Brussels–Milan: ✅ (seat 21€, couchette-6 52€, comfort-triple 99€)
-- Paris–Berlin: not confirmed yet
+- Paris–Berlin: ✅ (seat 21€, couchette-5 74€, private 269€)
 
 ## Domestic Journeys
 Disabled for: NL (84), BE (88), CZ (54), FR (87), CH (85), IT (83)
