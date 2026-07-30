@@ -1282,7 +1282,10 @@ paths:
         - Booking
       summary: Retrieve Current Order
       operationId: orderRetrieve
-      description: Retrieves the current order for the active session. Requires session cookie.
+      description: |-
+        Retrieves the current order for the active session. Requires session cookie.
+        Returns full order details including pricing in the session's active currency,
+        VAT breakdown by country, ticket/seat assignments, and payment status.
       parameters:
         - in: query
           name: locale
@@ -1296,7 +1299,138 @@ paths:
             application/json:
               schema:
                 type: object
-                description: Full order object with items, pricing, and status
+                properties:
+                  orderData:
+                    type: object
+                    properties:
+                      order:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                            example: '43873300'
+                          code:
+                            type: string
+                            example: '261947552705330'
+                          price:
+                            type: number
+                            description: Total price in the session's active currency
+                            example: 3289
+                          valid:
+                            type: boolean
+                          finished_at:
+                            type: string
+                          order_items:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                code:
+                                  type: string
+                                price:
+                                  type: number
+                                  description: Item price in session currency
+                                priceSum:
+                                  type: number
+                                stornable:
+                                  type: boolean
+                                created_at:
+                                  type: string
+                                  format: date-time
+                                deleted_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                  description: Set when order is cancelled/expired
+                                price_info:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      key:
+                                        type: string
+                                        example: base
+                                      price:
+                                        type: number
+                                      discount:
+                                        type: number
+                                vatRates:
+                                  type: array
+                                  description: VAT split by country traversed
+                                  items:
+                                    type: object
+                                    properties:
+                                      countryCode:
+                                        type: string
+                                        example: de
+                                      base:
+                                        type: number
+                                        description: Taxable base in session currency
+                                        example: 696.84
+                                      vat:
+                                        type: number
+                                        example: 48.78
+                                      tax:
+                                        type: number
+                                        description: Tax rate percentage
+                                        example: 7
+                                tickets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      id:
+                                        type: string
+                                      departure_date:
+                                        type: string
+                                      arrival_date:
+                                        type: string
+                                      station_from:
+                                        type: object
+                                        properties:
+                                          id:
+                                            type: string
+                                          name:
+                                            type: string
+                                      station_to:
+                                        type: object
+                                        properties:
+                                          id:
+                                            type: string
+                                          name:
+                                            type: string
+                  orderFinished:
+                    type: boolean
+              example:
+                orderData:
+                  order:
+                    id: '43873300'
+                    code: '261947552705330'
+                    price: 3289
+                    valid: true
+                    finished_at: ''
+                    order_items:
+                      - id: '65565675'
+                        code: '262314696588655'
+                        price: 3289
+                        priceSum: 3289
+                        stornable: true
+                        vatRates:
+                          - countryCode: de
+                            base: 696.84
+                            vat: 48.78
+                            tax: 7
+                          - countryCode: cz
+                            base: 1423.15
+                            vat: 0
+                            tax: 0
+                          - countryCode: pl
+                            base: 1119.9
+                            vat: 0
+                            tax: 0
+                orderFinished: false
   /api/order/prolong:
     get:
       tags:
@@ -1335,6 +1469,32 @@ paths:
               schema:
                 type: object
                 description: User profile or null/empty if not logged in
+  /api/currency/change:
+    post:
+      tags:
+        - Session
+      summary: Change Session Currency
+      operationId: currencyChange
+      description: |-
+        Sets the active currency for the session. Affects all subsequent searches
+        and order creation. Must be called *before* searching — changing currency
+        after adding to cart does not re-price existing orders.
+
+        Payment gateways (GoPay) will charge in the session currency.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                currency:
+                  type: string
+                  enum: [EUR, CZK, PLN]
+                  example: CZK
+      responses:
+        '200':
+          description: OK (empty body, currency is set server-side in session)
   /api/currency/retrieve:
     get:
       tags:
@@ -1688,6 +1848,30 @@ paths:
         Requires the `application_token` from `getApplicationData` as the `token` variable.
 
         Payment channels: `PAYMENT_CARD`, `BANK_ACCOUNT`, `APPLE_PAY`, `BITCOIN`, `google`
+
+        ## Payment Gateways
+
+        Leo Express uses two payment gateways depending on the selected method:
+        - **GoPay** (`gate.gopay.com`): Google Pay, Apple Pay, bank transfer, Bitcoin, and card via GoPay UI
+        - **GPWebPay** (`3dsecure.gpwebpay.com`): Direct credit card (may return 403 for non-Czech cards/IPs)
+
+        ## Currency in Payment
+
+        The payment is charged in the session currency active when the order was created.
+        GoPay respects CZK/EUR/PLN — the payment page shows the amount in the order's currency.
+
+        ## GoPay Card Payment Workaround
+
+        If the direct `PAYMENT_CARD` channel (GPWebPay) returns 403, use `google` channel instead.
+        On the GoPay page, click "Zpět" (back) → "Platební karta" to pay by card through GoPay's
+        own card form, which accepts international cards in CZK.
+
+        ## Callback Flow
+
+        After payment completion or cancellation:
+        1. GoPay redirects to `https://api.le.cz/gates/gopaygate/response.php?id={payment_id}`
+        2. That 302-redirects back to the Leo Express order page
+        3. Use `verifyGoPayPayment` mutation to confirm payment status
       parameters:
         - $ref: '#/components/parameters/ContentType'
         - $ref: '#/components/parameters/Origin'
@@ -1786,6 +1970,55 @@ paths:
                     example: false
                   error:
                     $ref: '#/components/schemas/Error'
+  /api/co2/delete:
+    post:
+      tags:
+        - Booking
+      summary: Remove CO2 Compensation
+      operationId: co2Delete
+      description: |-
+        Opts out of the voluntary CO2 compensation add-on for the current order.
+        Called during the payment step if the passenger declines the offset.
+      responses:
+        '200':
+          description: OK
+  https://api.le.cz/gates/gopaygate/create.php:
+    get:
+      tags:
+        - Payment
+      summary: GoPay Payment Gateway Redirect
+      operationId: gopayCreate
+      description: |-
+        Initiates the GoPay payment session. The browser is redirected here after
+        `getApplicationData` provides the token. Returns a 302 redirect to the GoPay
+        payment UI (`gate.gopay.com/gw-ui/rest/v3/{session_id}`).
+
+        After payment completion or cancellation, GoPay redirects to
+        `https://api.le.cz/gates/gopaygate/response.php?id={payment_id}`,
+        which 302-redirects back to the Leo Express order page.
+      parameters:
+        - in: query
+          name: order_id
+          required: true
+          schema:
+            type: string
+          description: Leo Express order ID
+          example: '43873466'
+        - in: query
+          name: token
+          required: true
+          schema:
+            type: string
+          description: Application token from `getApplicationData`
+          example: symW412o
+      responses:
+        '302':
+          description: Redirect to GoPay payment UI
+          headers:
+            Location:
+              schema:
+                type: string
+              example: https://gate.gopay.com/gw-ui/rest/v3/5ec3327be9b34a9e0d8f674c62cabda8
   /api/user/check:
     post:
       tags:
@@ -1853,6 +2086,477 @@ paths:
             application/json:
               schema:
                 type: object
+
+  /api/pin/show:
+    post:
+      tags:
+        - Session
+      summary: Show User PIN
+      operationId: pinShow
+      description: Returns the user's Smile Club PIN code. Requires session cookie with logged-in user.
+      responses:
+        '200':
+          description: OK
+
+  /api/pin/change:
+    post:
+      tags:
+        - Session
+      summary: Change User PIN
+      operationId: pinChange
+      description: Changes the user's Smile Club PIN. Requires current password for verification.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - password
+                - newpin
+              properties:
+                password:
+                  type: string
+                  description: Current account password for verification
+                oldpin:
+                  type: string
+                  description: Current PIN (empty if not set)
+                newpin:
+                  type: string
+                  description: New 4-digit PIN
+                  example: '1234'
+                locale:
+                  type: string
+                  example: de
+      responses:
+        '200':
+          description: OK
+
+  /api/user/logout:
+    post:
+      tags:
+        - Session
+      summary: Logout
+      operationId: userLogout
+      description: Ends the user session. Invalidates the session cookie.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                locale:
+                  type: string
+                  example: de
+      responses:
+        '200':
+          description: OK
+
+  /api/user/update:
+    post:
+      tags:
+        - Session
+      summary: Update User Profile
+      operationId: userUpdate
+      description: |-
+        Updates profile fields for the logged-in user. Requires session cookie.
+        Can also set the default currency for the account.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                language:
+                  type: string
+                  description: Preferred language code
+                  enum: [cs, sk, pl, en, de, hu, uk, zh]
+                  example: de
+                currency:
+                  type: string
+                  description: Default currency for the account
+                  enum: [CZK, EUR, PLN]
+                  example: CZK
+                email:
+                  type: string
+                  description: User ID (numeric, despite the field name)
+                  example: '<user_id>'
+                locale:
+                  type: string
+                  example: de
+                default_search:
+                  type: string
+                  description: |-
+                    Base64-encoded JSON with default search preferences. Decoded structure:
+                    ```json
+                    {
+                      "from": {"id": "8010366", "value": "Weimar", "location": {}},
+                      "to": {"id": "PRZEMYSL", "value": "Przemyśl", "location": {}},
+                      "tariff": {
+                        "short": "adult",
+                        "discounts": [],
+                        "parentTariffs": [],
+                        "combine": 1,
+                        "ztpAllowed": true,
+                        "ztpChildAllowed": false,
+                        "show_type": 1
+                      }
+                    }
+                    ```
+                    Station IDs can be EVA codes or meta-codes.
+                    Discounts array contains card identifiers when selected.
+      responses:
+        '200':
+          description: OK
+
+  /api/user/gift-codes-values:
+    get:
+      tags:
+        - Session
+      summary: Gift Code Values
+      operationId: userGiftCodesValues
+      description: Returns available gift code denominations.
+      parameters:
+        - in: query
+          name: locale
+          schema:
+            type: string
+          example: de
+        - in: query
+          name: currency
+          schema:
+            type: string
+          example: EUR
+      responses:
+        '200':
+          description: OK
+
+  /api/order/process-voucher-order:
+    post:
+      tags:
+        - Booking
+      summary: Redeem Voucher
+      operationId: processVoucherOrder
+      description: Applies a voucher/gift code to the current order.
+      responses:
+        '200':
+          description: OK
+
+  /api/order/choose-credit-payment-method:
+    post:
+      tags:
+        - Payment
+      summary: Pay with Leo Credits
+      operationId: chooseCreditPaymentMethod
+      description: |-
+        Selects Leo Credits as the payment method for the current order.
+        Bypasses the GoPay gateway entirely — credits are deducted immediately.
+        Requires a logged-in Smile Club session with sufficient credit balance.
+      responses:
+        '200':
+          description: OK
+
+  /le#creditExchangeRates:
+    post:
+      tags:
+        - Pricing
+      summary: Credit Exchange Rates
+      operationId: creditExchangeRates
+      description: |-
+        Returns Leo's internal fixed exchange rates used for credit/currency conversion.
+        Known rates: 1 EUR = 24 CZK, 1 PLN = 5 CZK.
+        Requires auth token.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query creditExchangeRatesQuery($token: String, $locale: String, $platform: String) { creditExchangeRates(token: $token, locale: $locale, platform: $platform) { rates { from to rate } error { code message } } }'
+              variables:
+                token: '<user_auth_token>'
+                locale: de
+      responses:
+        '200':
+          description: OK
+
+  /le#validTickets:
+    post:
+      tags:
+        - Booking
+      summary: Valid (Upcoming) Tickets
+      operationId: validTickets
+      description: |-
+        Returns the user's valid (upcoming/active) tickets, paginated.
+        The `email` parameter is actually the numeric user ID.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query validTicketsQuery($email: String, $limit: Int, $page: Int, $token: String, $locale: String) { validTickets(email: $email, limit: $limit, page: $page, token: $token, locale: $locale) { tickets { ... } error { code message } } }'
+              variables:
+                email: '<user_id>'
+                limit: 10
+                page: 1
+                token: '<user_auth_token>'
+                locale: de
+      responses:
+        '200':
+          description: OK
+
+  /le#usedTickets:
+    post:
+      tags:
+        - Booking
+      summary: Used (Past) Tickets
+      operationId: usedTickets
+      description: Returns the user's past/used tickets, paginated.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query usedTicketsQuery($email: String, $limit: Int, $page: Int, $token: String, $locale: String) { usedTickets(email: $email, limit: $limit, page: $page, token: $token, locale: $locale) { tickets { ... } error { code message } } }'
+              variables:
+                email: '<user_id>'
+                limit: 10
+                page: 1
+                token: '<user_auth_token>'
+                locale: de
+      responses:
+        '200':
+          description: OK
+
+  /le#userTransactions:
+    post:
+      tags:
+        - Payment
+      summary: User Transaction History
+      operationId: userTransactions
+      description: Returns purchase and credit transaction history.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query userTransactionsQuery($email: String, $token: String, $limit: Int, $page: Int, $locale: String, $platform: String) { userTransactions(email: $email, token: $token, limit: $limit, page: $page, locale: $locale, platform: $platform) { transactions { ... } error { code message } } }'
+              variables:
+                email: '<user_id>'
+                token: '<user_auth_token>'
+                limit: 10
+                page: 1
+                locale: de
+                platform: website
+      responses:
+        '200':
+          description: OK
+
+  /le#creditList:
+    post:
+      tags:
+        - Payment
+      summary: Leo Credits Balance & History
+      operationId: creditList
+      description: Returns Leo Credits balance and transaction list.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query creditListQuery($user: String, $token: String, $limit: Int, $page: Int, $locale: String, $platform: String) { creditList(user: $user, token: $token, limit: $limit, page: $page, locale: $locale, platform: $platform) { credits { ... } error { code message } } }'
+              variables:
+                user: '<user_id>'
+                token: '<user_auth_token>'
+                limit: 10
+                page: 1
+                locale: de
+                platform: website
+      responses:
+        '200':
+          description: OK
+
+  /le#orderExpirations:
+    post:
+      tags:
+        - Booking
+      summary: Order Expirations
+      operationId: orderExpirations
+      description: Returns orders that are about to expire (unpaid within time window).
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query orderExpirationsQuery($user: String, $token: String, $limit: Int, $page: Int, $locale: String, $platform: String) { orderExpirations(user: $user, token: $token, limit: $limit, page: $page, locale: $locale, platform: $platform) { orders { ... } error { code message } } }'
+              variables:
+                user: '<user_id>'
+                token: '<user_auth_token>'
+                limit: 10
+                page: 1
+                locale: de
+                platform: website
+      responses:
+        '200':
+          description: OK
+
+  /le#userSalecodes:
+    post:
+      tags:
+        - Pricing
+      summary: User Discount Codes
+      operationId: userSalecodes
+      description: Returns active (or expired) discount/sale codes for the user.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query userSalecodesQuery($user: String, $token: String, $locale: String, $platform: String, $expired: Boolean) { userSalecodes(user: $user, token: $token, locale: $locale, platform: $platform, expired: $expired) { salecodes { ... } error { code message } } }'
+              variables:
+                user: '<user_id>'
+                token: '<user_auth_token>'
+                locale: de
+                platform: website
+                expired: false
+      responses:
+        '200':
+          description: OK
+
+  /le#userGiftCodes:
+    post:
+      tags:
+        - Payment
+      summary: User Gift Codes
+      operationId: userGiftCodes
+      description: Returns gift codes owned by the user.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query userGiftCodesQuery($user: String, $limit: Int, $page: Int, $token: String, $locale: String, $platform: String) { userGiftCodes(user: $user, limit: $limit, page: $page, token: $token, locale: $locale, platform: $platform) { giftCodes { ... } error { code message } } }'
+              variables:
+                user: '<user_id>'
+                limit: 10
+                page: 1
+                token: '<user_auth_token>'
+                locale: de
+                platform: website
+      responses:
+        '200':
+          description: OK
+
+  /le#refundPaymentMethods:
+    post:
+      tags:
+        - Payment
+      summary: Refund Payment Methods
+      operationId: refundPaymentMethods
+      description: |-
+        Returns available refund methods for a specific ticket/order item.
+        Called before `stornoTicketMutation` to determine which refund method to use.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'query refundPaymentMethodsQuery($items_code: String, $locale: String, $token: String, $timestamp: Int) { refundPaymentMethods(items_code: $items_code, locale: $locale, token: $token, timestamp: $timestamp) { methods { id name } error { code message } } }'
+              variables:
+                items_code: '<order_item_code>'
+                locale: de
+                token: '<user_auth_token>'
+                timestamp: 1785340633
+      responses:
+        '200':
+          description: OK
+
+  /le#stornoTicket:
+    post:
+      tags:
+        - Booking
+      summary: Cancel (Storno) Ticket
+      operationId: stornoTicket
+      description: |-
+        Cancels a ticket and initiates refund to the specified payment method.
+        Returns `{success: true}` on successful cancellation.
+
+        Refund method IDs (from `refundPaymentMethods`):
+        - 101: Original payment card
+        - Other methods depend on the order's payment type
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'mutation stornoTicketMutation($order_code: String, $items_code: String, $method: String, $locale: String, $token: String) { stornoTicket(order_code: $order_code, items_code: $items_code, method: $method, locale: $locale, token: $token) { success error { code message } } }'
+              variables:
+                order_code: null
+                items_code: '<order_item_code>'
+                method: '101'
+                locale: de
+                token: '<user_auth_token>'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example:
+                data:
+                  stornoTicket:
+                    success: true
+                    error: null
 
 components:
   parameters:
