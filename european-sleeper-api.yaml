@@ -492,6 +492,196 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  # ─── Last-Minute Deals (europeansleeper.eu promotional site) ───────────────
+  # These endpoints are served by the WordPress/Laravel site (www.europeansleeper.eu),
+  # NOT the Azure booking API. They bridge promotional flash-sale pricing into the
+  # standard booking system.
+
+  https://www.europeansleeper.eu/receipt/price/{count}/{priceId}:
+    get:
+      tags:
+        - Last-Minute Deals
+      summary: Get Deal Price
+      operationId: getLastMinutePrice
+      description: |-
+        Returns the display price for a last-minute deal. The price is per-person for
+        shared deals, or per-compartment for private deals.
+
+        Active deal IDs are in range 903–999 (as of Jul 2026). IDs outside this range
+        return a Dutch error page ("Systeemfout").
+
+        The endpoint only returns the price — it does not reveal which date, route, or
+        train a deal belongs to.
+
+        ## Deal Characteristics
+
+        - Trains departing in 1–3 weeks (rolling window, updated regularly)
+        - Couchette-5 only (Classic compartment) — no berths, no comfort class
+        - Non-refundable
+        - Includes bed linen and luggage (same as regular easy-night fare)
+        - No child discounts, no Interrail reservations
+        - Limited availability per train/date/season
+
+        ## Price Tiers
+
+        | Price | Type |
+        |-------|------|
+        | €40 | Shared couchette (1 bed in 5-person compartment) |
+        | €60 | Shared couchette (higher demand dates) |
+        | €160 | Private compartment (whole 5-person compartment, up to 5 travelers) |
+        | €240 | Private compartment (higher demand dates) |
+
+        ## Landing Pages
+
+        Deals are organized by route direction on the website:
+        - `/last-minutes-hamburg-berlin` — Paris/Brussels → Hamburg/Berlin (train 475)
+        - `/last-minutes-brussels-paris` — Hamburg/Berlin → Paris/Brussels (train 474)
+        - `/last-minutes-berlin-prague` — Brussels/Amsterdam → Berlin/Prague (train 453)
+        - `/last-minutes-amsterdam-brussels` — Berlin/Prague → Amsterdam/Brussels (train 454)
+      parameters:
+        - in: path
+          name: count
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+          description: Number of travelers (for shared) or compartments (for private)
+          example: 1
+        - in: path
+          name: priceId
+          required: true
+          schema:
+            type: integer
+          description: Deal identifier (currently 903–999)
+          example: 981
+      responses:
+        '200':
+          description: |-
+            Returns HTML entity with price (e.g. `&euro;40`) or empty string for invalid/expired IDs.
+            Error page HTML (title "Systeemfout") for IDs outside the active range.
+          content:
+            text/html:
+              schema:
+                type: string
+              example: "&euro;40"
+
+  https://www.europeansleeper.eu/receipt/run:
+    post:
+      tags:
+        - Last-Minute Deals
+      summary: Book Last-Minute Deal
+      operationId: bookLastMinuteDeal
+      description: |-
+        Creates a booking from a last-minute deal. Bridges the promotional site into the
+        standard Azure booking system.
+
+        On success, returns a redirect (302) to `booking.europeansleeper.eu/en/cart?bookingId={uuid}`
+        where the deal has been pre-applied as an `easy-night` fare at the promotional price.
+
+        The created booking has the same 30-minute expiry timer as regular bookings and uses
+        the same `/booking/get-authenticated/{id}` endpoint for status/details.
+
+        ## Booking Details (from get-authenticated response)
+
+        - `placeType`: `couchette-5` (shared) or `couchette-5-private`
+        - `fareType`: `easy-night`
+        - `tariff`: 65 (Adult standard)
+        - Non-refundable (per last-minute terms)
+        - Multi-currency prices included in response (EUR, CZK, GBP, JPY, USD)
+        - Coach/compartment/seat assigned immediately
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - departure-station
+                - arrival-station
+                - landingpage
+                - price
+                - group
+                - voornaam
+                - achternaam
+                - telefoon
+                - email
+                - agree
+              properties:
+                departure-station:
+                  type: string
+                  description: EVA number of departure station
+                  example: "8700015"
+                arrival-station:
+                  type: string
+                  description: EVA number of arrival station
+                  example: "8020401"
+                landingpage:
+                  type: integer
+                  description: Campaign/page identifier (100 = last-minutes-hamburg-berlin)
+                  example: 100
+                price:
+                  type: integer
+                  description: Deal/price ID (from /receipt/price)
+                  example: 981
+                group:
+                  type: integer
+                  description: Number of travelers
+                  minimum: 1
+                  maximum: 5
+                  example: 1
+                voornaam:
+                  type: string
+                  description: First name
+                  example: Max
+                achternaam:
+                  type: string
+                  description: Last name
+                  example: Mustermann
+                telefoon:
+                  type: string
+                  description: Phone number
+                  example: "+31612345678"
+                email:
+                  type: string
+                  format: email
+                  description: Email address
+                  example: user@example.com
+                agree:
+                  type: string
+                  description: Terms acceptance (must be "on")
+                  enum: ["on"]
+                  example: "on"
+      responses:
+        '302':
+          description: Redirect to booking cart
+          headers:
+            Location:
+              schema:
+                type: string
+              example: https://booking.europeansleeper.eu/en/cart?bookingId=a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+  https://www.europeansleeper.eu/check-valid-email:
+    post:
+      tags:
+        - Last-Minute Deals
+      summary: Validate Email
+      operationId: checkValidEmail
+      description: Validates an email address before booking. Returns 200 on success.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Email is valid
+
 components:
   requestBodies:
     AvailabilityRequest:
