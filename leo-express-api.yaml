@@ -3,28 +3,13 @@ info:
   title: Leo Express API
   version: 1.0.0
   description: |-
-    Booking API for [leoexpress.com](https://www.leoexpress.com), including:
-    - Connection search with multi-class pricing (Business, Economy, Economy Plus, Premium, Economy Sleeper, Economy Sleeper Lady)
-    - Live train positions with GPS coordinates, speed, bearing, and delay data
-    - Station database with GPS coordinates (189 stations across CZ, PL, SK, DE, LT, LV, ET, UA)
-    - Carrier and route metadata
-    - Full booking flow via GraphQL (search → createOrder → seat selection → payment)
-    - Seat map with car layouts (base64 SVG) and free seat lists
-    - Tariff system with 98 discount types (ZTP, ŤZP, Interrail, Polish ULGA, family, group, corporate)
-    - 8 add-on services (bicycle, ski, dog, parking, seat reservation, thermal pass)
-    - 30 on-board facility types (WiFi, power, AC, steward, sleep set, catering)
-    - Timetable data with calendar validity and exception days
-    - Time ticket (pass) pricing
-    - Order management (prolong, add-on services, reseat, refund)
-    - Night train LE235: Frankfurt (Main) Süd → Przemyśl Główny (overnight, 1193 km)
+    Reverse-engineered booking API for [leoexpress.com](https://www.leoexpress.com). Covers connection search,
+    live train positions, station database, booking flow, seat maps, tariffs, and payment.
 
     ## Architecture
 
-    The API consists of two parts:
-    - **GraphQL** endpoint at `https://graph.leoexpress.com/le` — full API with 60+ queries and 50+ mutations
+    - **GraphQL** endpoint at `https://graph.leoexpress.com/le` — primary API (introspection enabled, 158 types)
     - **REST** endpoints at `https://www.leoexpress.com/api` — session management and legacy order processing
-
-    The GraphQL endpoint supports full introspection (`__schema` queries).
 
     ## Authentication
 
@@ -32,39 +17,13 @@ info:
     Booking operations use an `order_code` + `digest` (base64 token) pair returned when creating an order.
     User account operations require a `token` from the `loginUser` mutation.
 
-    ## Station Identifiers
-
-    Stations can be referenced by:
-    - EVA numbers (e.g. `8010366` = Weimar, `8002041` = Frankfurt (Main) Süd)
-    - Internal string codes (e.g. `PRZEMYSL`, `PRAHA`, `LEIPZIG`, `DRESDEN`)
-    - Internal numeric codes (e.g. `5434124` = Praha hl.n., `5102825` = Przemyśl Zasanie)
-
-    The `stations` query returns all 189 stations with GPS coordinates.
-
-    ## Booking Flow (GraphQL)
-
-    1. `searchConnections` → returns connections with `hash` per connection
-    2. `createOrder` mutation (hash + classCombination) → returns `order_code` + `digest`
-    3. `carsWithFreeSeats` query (ticket_id) → seat map with free seats
-    4. `changeSeat` mutation → assign specific seat
-    5. `orderPaymentMethodsExt` query (digest) → available payment methods
-    6. `bindOrderToUser` mutation → submit passenger email/name
-    7. `getApplicationData` query → get application token for payment gateway
-    8. `createGoPayPayment` mutation → get redirect URL to GoPay payment form
-    9. User completes payment on GoPay → redirect back
-    10. `verifyGoPayPayment` mutation → confirm payment status
-
-    ## Booking Flow (REST, legacy)
-
-    Steps 2–6 can alternatively use REST endpoints (`/api/order/process-order`, `/api/seats/change`,
-    `/api/payment/choose-method`), but these require browser session cookies and are less reliable
-    from API clients.
-
 servers:
   - url: https://graph.leoexpress.com
     description: GraphQL API (all /le#... paths)
   - url: https://www.leoexpress.com
     description: REST API (all /api/... paths)
+  - url: https://api.le.cz
+    description: Payment gateway API (/gates/... paths)
 tags:
   - name: Search
     description: Connection search and route information
@@ -98,23 +57,17 @@ paths:
       operationId: searchConnections
       description: |-
         Search for train/bus connections between two stations on a given date.
-        Returns available connections with pricing per class, transfer info, and a `hash`
-        per connection used to create an order.
+        Returns connections with pricing per class, transfer info, and a `hash` used to create an order.
 
-        Station IDs can be EVA numbers (e.g. `8010366`), internal string codes (e.g. `PRZEMYSL`),
+        **IMPORTANT: Joining `classes` and `class_info` arrays**
+
+        The `classes` and `class_info` arrays in the response are NOT aligned by index.
+        Join on: `class_info[n].record_id == classes[m].id`.
+
+        **Station ID formats**
+
+        EVA numbers (e.g. `8010366`), internal string codes (e.g. `PRZEMYSL`),
         or internal numeric codes (e.g. `5434124`).
-
-        The `persons` array defines passenger composition. Each entry has a `name` (passenger type)
-        and optional `cards` array for discount cards (e.g. `"interrailbus"`).
-
-        The `services` array requests additional services (e.g. service_id `"4"` = bicycle).
-
-        The optional `backride` variable specifies a return date (format `DD.MM.YYYY`) for round-trip searches.
-
-        Additional undocumented parameters for GPS-based search:
-        - `from_lat`, `from_lon`: GPS coordinates of origin (for door-to-door / D2D service)
-        - `to_lat`, `to_lon`: GPS coordinates of destination
-        - `from_address`, `to_address`: Address strings for D2D pickup/dropoff
       parameters:
         - $ref: '#/components/parameters/ContentType'
         - $ref: '#/components/parameters/Origin'
@@ -722,9 +675,11 @@ paths:
       operationId: carsWithFreeSeats
       description: |-
         Returns car layout and available seats for a specific ticket. Each car includes a base64-encoded
-        SVG map (`car_map`) showing the physical layout, plus a list of free seats with their class and type.
+        SVG map (`car_map`) and a list of free seats with class and type.
 
-        Car names like "RIC B4-1" indicate couchette cars on international night trains.
+        The response is **class-dependent**: the `free_seats` list is filtered to only include seats
+        matching the ticket's class. Querying with class 7 vs class 8 returns different seat pools
+        even for the same physical car.
       parameters:
         - $ref: '#/components/parameters/ContentType'
         - $ref: '#/components/parameters/Origin'
@@ -1849,29 +1804,8 @@ paths:
 
         Payment channels: `PAYMENT_CARD`, `BANK_ACCOUNT`, `APPLE_PAY`, `BITCOIN`, `google`
 
-        ## Payment Gateways
-
-        Leo Express uses two payment gateways depending on the selected method:
-        - **GoPay** (`gate.gopay.com`): Google Pay, Apple Pay, bank transfer, Bitcoin, and card via GoPay UI
-        - **GPWebPay** (`3dsecure.gpwebpay.com`): Direct credit card (may return 403 for non-Czech cards/IPs)
-
-        ## Currency in Payment
-
-        The payment is charged in the session currency active when the order was created.
-        GoPay respects CZK/EUR/PLN — the payment page shows the amount in the order's currency.
-
-        ## GoPay Card Payment Workaround
-
-        If the direct `PAYMENT_CARD` channel (GPWebPay) returns 403, use `google` channel instead.
-        On the GoPay page, click "Zpět" (back) → "Platební karta" to pay by card through GoPay's
-        own card form, which accepts international cards in CZK.
-
-        ## Callback Flow
-
-        After payment completion or cancellation:
-        1. GoPay redirects to `https://api.le.cz/gates/gopaygate/response.php?id={payment_id}`
-        2. That 302-redirects back to the Leo Express order page
-        3. Use `verifyGoPayPayment` mutation to confirm payment status
+        After payment, GoPay redirects to `https://api.le.cz/gates/gopaygate/response.php?id={payment_id}`,
+        which 302-redirects back to the Leo Express order page. Use `verifyGoPayPayment` to confirm status.
       parameters:
         - $ref: '#/components/parameters/ContentType'
         - $ref: '#/components/parameters/Origin'
@@ -1970,32 +1904,16 @@ paths:
                     example: false
                   error:
                     $ref: '#/components/schemas/Error'
-  /api/co2/delete:
-    post:
-      tags:
-        - Booking
-      summary: Remove CO2 Compensation
-      operationId: co2Delete
-      description: |-
-        Opts out of the voluntary CO2 compensation add-on for the current order.
-        Called during the payment step if the passenger declines the offset.
-      responses:
-        '200':
-          description: OK
-  https://api.le.cz/gates/gopaygate/create.php:
+  /gates/gopaygate/create.php:
     get:
       tags:
         - Payment
       summary: GoPay Payment Gateway Redirect
       operationId: gopayCreate
       description: |-
-        Initiates the GoPay payment session. The browser is redirected here after
-        `getApplicationData` provides the token. Returns a 302 redirect to the GoPay
-        payment UI (`gate.gopay.com/gw-ui/rest/v3/{session_id}`).
-
-        After payment completion or cancellation, GoPay redirects to
-        `https://api.le.cz/gates/gopaygate/response.php?id={payment_id}`,
-        which 302-redirects back to the Leo Express order page.
+        Initiates the GoPay payment session. Uses a different base URL: `https://api.le.cz`.
+        The browser is redirected here after `getApplicationData` provides the token.
+        Returns a 302 redirect to the GoPay payment UI (`gate.gopay.com/gw-ui/rest/v3/{session_id}`).
       parameters:
         - in: query
           name: order_id
@@ -2254,34 +2172,6 @@ paths:
         Selects Leo Credits as the payment method for the current order.
         Bypasses the GoPay gateway entirely — credits are deducted immediately.
         Requires a logged-in Smile Club session with sufficient credit balance.
-      responses:
-        '200':
-          description: OK
-
-  /le#creditExchangeRates:
-    post:
-      tags:
-        - Pricing
-      summary: Credit Exchange Rates
-      operationId: creditExchangeRates
-      description: |-
-        Returns Leo's internal fixed exchange rates used for credit/currency conversion.
-        Known rates: 1 EUR = 24 CZK, 1 PLN = 5 CZK.
-        Requires auth token.
-      parameters:
-        - $ref: '#/components/parameters/ContentType'
-        - $ref: '#/components/parameters/Origin'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GraphQLRequest'
-            example:
-              query: 'query creditExchangeRatesQuery($token: String, $locale: String, $platform: String) { creditExchangeRates(token: $token, locale: $locale, platform: $platform) { rates { from to rate } error { code message } } }'
-              variables:
-                token: '<user_auth_token>'
-                locale: de
       responses:
         '200':
           description: OK
@@ -2576,6 +2466,7 @@ components:
   schemas:
     GraphQLRequest:
       type: object
+      description: Standard GraphQL request body with query, variables, and operationName.
       required:
         - query
       properties:
@@ -2587,6 +2478,7 @@ components:
           description: Variables for the GraphQL operation
     Error:
       type: object
+      description: Error response with code and message.
       nullable: true
       properties:
         code:
@@ -2597,6 +2489,7 @@ components:
           example: No connections found
     Carrier:
       type: object
+      description: Transport carrier/operator.
       properties:
         id:
           type: integer
@@ -2622,6 +2515,7 @@ components:
           example: Leo Express Global a.s. / Leo Express s.r.o.
     Station:
       type: object
+      description: Station with GPS coordinates and metadata.
       properties:
         id:
           type: string
@@ -2690,6 +2584,7 @@ components:
                 example: Weimar
     DateTimeInfo:
       type: object
+      description: Datetime with timezone information.
       properties:
         date:
           type: string
@@ -2703,6 +2598,7 @@ components:
           example: Europe/Berlin
     SearchResults:
       type: object
+      description: Search response wrapper with connections array.
       properties:
         return_msg:
           type: string
@@ -2747,6 +2643,7 @@ components:
           $ref: '#/components/schemas/Error'
     Connection:
       type: object
+      description: A single connection/journey between two stations.
       properties:
         origin:
           $ref: '#/components/schemas/Station'
@@ -2845,6 +2742,7 @@ components:
 
     Line:
       type: object
+      description: A line segment within a connection.
       properties:
         line_id:
           type: string
@@ -3026,6 +2924,7 @@ components:
           example: ric
     Transfer:
       type: object
+      description: Transfer between two line segments.
       properties:
         id:
           type: string
@@ -3073,8 +2972,8 @@ components:
         - id:2, PRE = Premium (FLIRT only, 6-seat quiet compartment)
         - id:3, ECO = Economy (all vehicle types)
         - id:4, ECOPLUS = Economy Plus (FLIRT only, ergonomic seats + included refreshments)
-        - id:7, ECOSLEEPER = Economy Sleeper (RIC night train only)
-        - id:8, ECOSLEEPERLADY = Economy Sleeper Lady (RIC night train only)
+        - id:7, ECOSLEEPER = Economy Sleeper (RIC night train, compartments 6–10)
+        - id:8, ECOSLEEPERLADY = Economy Sleeper Lady (RIC night train, compartments 1–5)
       properties:
         id:
           type: integer
@@ -3091,9 +2990,14 @@ components:
           example: economy_train_ric
     ClassInfo:
       type: object
+      description: |-
+        Pricing and capacity info for a travel class on a specific line segment.
+        Join to TravelClass via: `class_info.record_id == classes.id`.
+        Arrays are NOT index-aligned — always join on this key.
       properties:
         record_id:
           type: string
+          description: Foreign key to TravelClass.id. Use this to join class_info entries with their corresponding class.
         capacity:
           type: integer
           description: Total capacity
@@ -3163,6 +3067,7 @@ components:
 
     DelayInfo:
       type: object
+      description: Real-time position and delay data for a vehicle.
       properties:
         line_short:
           type: string
@@ -3266,6 +3171,7 @@ components:
                         type: string
     Car:
       type: object
+      description: Train car with seat layout.
       properties:
         id:
           type: integer
@@ -3322,6 +3228,7 @@ components:
           nullable: true
     PaymentMethod:
       type: object
+      description: Available payment method.
       properties:
         id:
           type: integer
@@ -3369,6 +3276,7 @@ components:
           type: boolean
     TimeTicket:
       type: object
+      description: Time-based pass/ticket.
       properties:
         id:
           type: integer
@@ -3415,6 +3323,7 @@ components:
                 type: number
     OrderServiceItem:
       type: object
+      description: Add-on service attached to an order.
       properties:
         order_item:
           type: string
@@ -3454,6 +3363,7 @@ components:
                 nullable: true
     ProcessOrderResponse:
       type: object
+      description: REST order creation response.
       properties:
         error:
           $ref: '#/components/schemas/Error'
@@ -3563,6 +3473,7 @@ components:
           example: 1
     Tariff:
       type: object
+      description: Passenger type/discount definition.
       properties:
         id:
           type: string
@@ -3636,6 +3547,7 @@ components:
           type: integer
     Service:
       type: object
+      description: Add-on service definition.
       properties:
         id:
           type: string
@@ -3680,6 +3592,7 @@ components:
           type: boolean
     Facility:
       type: object
+      description: On-board amenity/facility type.
       properties:
         id:
           type: string
@@ -3690,6 +3603,7 @@ components:
           example: W-LAN
     Ride:
       type: object
+      description: Detailed ride information with stops and cars.
       properties:
         id:
           type: string
@@ -3759,6 +3673,7 @@ components:
             $ref: '#/components/schemas/Car'
     TimeTable:
       type: object
+      description: Static timetable entry with calendar validity.
       properties:
         line:
           type: object
@@ -3834,6 +3749,7 @@ components:
                 nullable: true
     OrderResponse:
       type: object
+      description: GraphQL order mutation response wrapper.
       properties:
         order:
           type: object

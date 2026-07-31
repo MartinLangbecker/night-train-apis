@@ -31,6 +31,7 @@ Booking API for [leoexpress.com](https://www.leoexpress.com), including:
 - GraphQL-based connection search with multi-class pricing (introspection enabled, 158 types)
 - Night train LE235: Frankfurt (Main) Süd → Przemyśl Główny (overnight, 1193 km via Leipzig/Dresden/Poland)
 - 6 travel classes: Economy, Economy Plus, Business, Premium (FLIRT), Economy Sleeper, Economy Sleeper Lady (RIC)
+- Sleeper car layout: RIC B6-1 with 10 compartments × 4 berths, strict static split (seats 1–20 Lady, 21–40 mixed)
 - 4 fleet types: Stadler FLIRT EMU, RIC coaches, Talgo VI, Stadler LINT DMU (each with distinct car scheme)
 - Live train positions with GPS, speed, bearing, and delay data (per-station filtering)
 - Station database with GPS coordinates (189 stations across 8 countries)

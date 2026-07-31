@@ -23,6 +23,33 @@ Returns connections with `hash` (used to create order), multi-class pricing, sto
 
 Additional undocumented params: `from_lat`, `from_lon`, `to_lat`, `to_lon`, `from_address`, `to_address` (for D2D shuttle service, currently inactive).
 
+#### Response Structure — class_info / classes Join
+
+The response contains two arrays per connection: `class_info` and `classes`. These are **NOT index-aligned**. Join via:
+
+```
+class_info[n].record_id == classes[m].id
+```
+
+- `class_info[]`: pricing data (price, capacity, standing flag, conditions)
+- `classes[]`: class metadata (id, name, short code, vehicle type)
+
+Without this join, prices get assigned to the wrong class.
+
+#### Price Tiers (Economy Sleeper, Frankfurt–Przemyśl)
+
+Dynamic pricing follows discrete tiers:
+- CZK (canonical): 899 → 1269 → 1649 → 2469 → 3289 → 4939
+- EUR (derived via ÷24): 37.5 → 52.9 → 68.7 → 102.9 → 137.0 → 205.8
+
+#### Multi-Person Search
+
+When `persons` contains multiple entries, the API returns **averaged per-person pricing** (total ÷ count). No seats are blocked or reserved during search — capacity remains unchanged regardless of person count. Seats are only blocked once `createOrder` is called (15-min reservation timer).
+
+#### Capacity Field
+
+`class_info[].capacity` is reduced immediately when `createOrder` is called (15-min reservation timer). Deleting the order restores capacity instantly. Searches alone never affect capacity.
+
 ### createOrder (mutation, preferred over REST)
 ```json
 {"variables": {"input": {"hash": "<from search>", "class": "7", "classCombination": [{"line": "LE235", "class": "7"}]}, "locale": "de", "platform": "website"}}
@@ -270,6 +297,12 @@ Lux Express Baltic routes (EL-204xx), Leo Express buses (LEB9xxxx).
 
 ## Booking Flow (REST, legacy)
 REST `/api/order/process-order` requires browser session cookies (XSRF). Prefer GraphQL `createOrder`.
+
+## Cancellation Policy
+- Cancel up to 15 min before departure
+- Fee: 30 CZK per ticket
+- Promo tickets: no refund
+- Delay compensation: 25% at 60 min, 50% at 120 min
 
 ## Availability Monitoring
 Script: `leo-availability.py`
