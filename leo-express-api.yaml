@@ -8,7 +8,7 @@ info:
 
     ## Architecture
 
-    - **GraphQL** endpoint at `https://graph.leoexpress.com/le` — primary API (introspection enabled, 158 types)
+    - **GraphQL** endpoint at `https://graph.leoexpress.com/le` — primary API (introspection enabled, 169 types)
     - **REST** endpoints at `https://www.leoexpress.com/api` — session management and legacy order processing
 
     ## Authentication

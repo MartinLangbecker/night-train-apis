@@ -152,7 +152,7 @@ Schedule:
 - Przemyśl 12:04 → Frankfurt Süd 07:22 (+1)
 - From Sep 21, 2026 (Mon–Fri): extends to/from Frankfurt Flughafen Fernbf (dep 14:39 / arr 07:53)
 
-The Polish section (Bohumín → Przemyśl) follows separate timetable periods. Polish timetable changes on Aug 30 — stops beyond Bohumín may change.
+The full route Frankfurt–Przemyśl is operational since early August 2026 (previously truncated at the Czech-Polish border in Bohumín). The Polish section (Bohumín → Przemyśl) follows separate timetable periods. Polish timetable changes on Aug 30 — stops beyond Bohumín may change.
 
 Sleeper cars debut July 31, 2026. Searching earlier dates still shows sleeper availability but assigns July 31 departure.
 
@@ -205,7 +205,7 @@ On CZ main corridor (LE12xx), Bratislava (LE1215), and night train (LE235).
 - RIC KUPE ECO 1: Economy compartment (class 3)
 - RIC B4-1: Economy (class 3) — no Business on this service
 
-### Talgo (scheme: `talgo`)
+### Talgo (scheme: `talgo`) — ⚠️ OUT OF SERVICE since July 31, 2026
 Loco-hauled Talgo coaches on CZ main corridor (LE1255 and LE1265, Praha→Bohumín).
 - Economy and Business classes only (no Premium/Economy Plus)
 - **12 cars**: Talgo 1 (Business), Talgo 2 (Business+Economy), Talgo 3 (bistro, no class), Talgo 4–12 (Economy)
@@ -216,7 +216,7 @@ Loco-hauled Talgo coaches on CZ main corridor (LE1255 and LE1265, Praha→Bohum�
 - Children's compartment with pram space
 - 5G, AC, adjustable leather seats with headrests
 
-**Background:** Ex-Spanish Talgo VI (S6) rakes, ~30 years old, rented from Renfe (50% owner of Leo Express since 2021). Refitted but unreliable — service launched April 30, 2026 on Praha–Bratislava and Praha–Prešov. Prešov leg cancelled after days due to breakdowns. Planned as 3 sets with tight turnarounds, no reserve. Includes a generator coach for power supply (not drawing from locomotive). Hauled by Railpool Vectron (193 class).
+**Background:** Ex-Spanish Talgo VI (S6) rakes, ~30 years old, rented from Renfe (50% owner of Leo Express since 2021). Refitted but unreliable — service launched April 30, 2026 on Praha–Bratislava and Praha–Prešov. Prešov leg cancelled after days due to breakdowns. Moved to Praha–Bohumín mid-July 2026, then fully withdrawn from service on July 31, 2026 due to persistent reliability issues. Leo Express states services will not resume until the problems are resolved. Currently no Talgo trains operating on any route. Planned as 3 sets with tight turnarounds, no reserve. Includes a generator coach for power supply (not drawing from locomotive). Hauled by Railpool Vectron (193 class).
 
 ### LINT DMU (scheme: `lint-long`)
 Diesel railcar on SK Podunajsko (43xx, 14xx) and CZ Orlicko (7xxx) regional lines.
