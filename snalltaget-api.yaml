@@ -4,26 +4,42 @@ info:
   version: 1.0.0
   description: |-
     Availability and pricing API for [snalltaget.se](https://www.snalltaget.se).
-    Night train D 10300/10301 operating Berlin/Hamburg ↔ Stockholm.
+
+    ## Trains
+
+    | Number | Type | Route |
+    |--------|------|-------|
+    | D 10300 | STNIGHT | Berlin/Hamburg → Stockholm (direct, 1 leg) |
+    | D 300 | STNIGHT | Berlin/Hamburg → Malmö (night section only) |
+    | 3940 | STTRAIN | Malmö → Stockholm (day continuation) |
+    | 306 | STTRAIN | Hamburg → Stockholm (day train) |
+
+    D 300 + 3940 = same physical train as D 10300, split at Malmö. Shared berths (NTB*)
+    are only offered on the D 300 + 3940 transfer route, never on D 10300 direct.
 
     ## Authentication
 
     Bearer token from `GET https://www.snalltaget.se/token/v2` (no credentials, User-Agent required).
+    Initial token: 900s TTL. Refreshed token: 1800s TTL.
 
     ## Stations
 
-    | Station | API value |
-    |---------|-----------|
-    | Berlin | `Berlin` |
-    | Hamburg | `Hamburg` |
-    | Stockholm | `740000001` |
+    | Station | Search value | EVA |
+    |---------|-------------|-----|
+    | Berlin | `Berlin` | 800010100 |
+    | Hamburg | `Hamburg` | — |
+    | Dresden | `Dresden` | — |
+    | Malmö | — | 740000003 |
+    | Stockholm | `740000001` | 740000001 |
+
+    Search uses name strings; booking uses EVA numbers.
 
     ## Direction
 
     - `outbound`: origin is Berlin, Hamburg, or Dresden
     - `inbound`: origin is Stockholm
 
-    Prices in SEK. 4 endpoints total.
+    Prices in SEK. 8 endpoints total.
 servers:
   - url: https://apiv2.snalltaget.se
     description: API server
@@ -318,6 +334,198 @@ paths:
                 type: string
                 description: New Bearer token
 
+  /interrail/validate:
+    post:
+      tags:
+        - Interrail
+      summary: Validate Interrail Pass
+      operationId: validateInterrail
+      description: |-
+        Validates one or more Interrail/Eurail pass numbers for a given travel date.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - numbers
+                - date
+              properties:
+                numbers:
+                  type: array
+                  items:
+                    type: string
+                  description: Pass numbers to validate
+                  example:
+                    - '123456789'
+                date:
+                  type: string
+                  format: date
+                  description: Travel date
+                  example: '2026-08-31'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isValid:
+                    type: boolean
+                  result:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        number:
+                          type: string
+                        valid:
+                          type: boolean
+
+  /vouchers/verify:
+    post:
+      tags:
+        - Vouchers
+      summary: Verify Voucher
+      operationId: verifyVoucher
+      description: |-
+        Verifies a voucher (värdebevis) against a booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoucherRequest'
+      responses:
+        '200':
+          description: Voucher valid
+        '400':
+          description: Invalid voucher
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Inget aktivt värdebevis kunde hittas
+
+  /vouchers/discountcode/verify:
+    post:
+      tags:
+        - Vouchers
+      summary: Verify Discount Code
+      operationId: verifyDiscountCode
+      description: |-
+        Verifies a discount code (rabattkod) against a booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoucherRequest'
+      responses:
+        '200':
+          description: Code valid
+        '400':
+          description: Invalid code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Ogiltig rabattkod
+
+  /booking:
+    post:
+      tags:
+        - Booking
+      summary: Create Booking
+      operationId: createBooking
+      description: |-
+        Creates a booking for one or more segments. Uses EVA numbers for stations
+        (not the search string identifiers). Returns a booking number (PNR).
+
+        Tariff codes observed: `NMR_NTBRF` (shared berth rebookable/flex).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - segments
+              properties:
+                segments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      origin:
+                        type: string
+                        description: EVA number
+                        example: '800010100'
+                      destination:
+                        type: string
+                        description: EVA number
+                        example: '740000003'
+                      direction:
+                        type: string
+                        enum:
+                          - outbound
+                          - inbound
+                      departure:
+                        type: string
+                        format: date-time
+                      serviceName:
+                        type: string
+                        example: '300'
+                      serviceIdentifier:
+                        type: string
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            passengerId:
+                              type: string
+                              example: passenger_1
+                            tariffCode:
+                              type: string
+                              example: NMR_NTBRF
+                      optionItems:
+                        type: array
+                        items:
+                          type: object
+      responses:
+        '200':
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bookingNumber:
+                    type: string
+                    description: PNR / booking reference
+                    example: MVVDCX
+                  payments:
+                    type: array
+                    items:
+                      type: object
+                  bookingFulfillmentMethod:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      code:
+                        type: string
+                        example: HP_E
+
 components:
   securitySchemes:
     BearerAuth:
@@ -467,6 +675,32 @@ components:
               content:
                 type: string
                 example: Please arrive 30 minutes before departure.
+
+    VoucherRequest:
+      type: object
+      required:
+        - bookingNumber
+        - voucherCode
+        - travelDates
+      properties:
+        bookingNumber:
+          type: string
+          description: PNR from booking
+          example: QKIL7R
+        voucherCode:
+          type: string
+          description: Voucher or discount code
+          example: SUMMER2026
+        email:
+          type: string
+          example: ''
+        travelDates:
+          type: array
+          items:
+            type: string
+            format: date
+          example:
+            - '2026-11-27'
 
 security:
   - BearerAuth: []
