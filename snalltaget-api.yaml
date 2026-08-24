@@ -7,16 +7,18 @@ info:
 
     ## Trains
 
-    | Number | Type | Route |
-    |--------|------|-------|
-    | D 10300 | STNIGHT | Berlin/Hamburg → Stockholm (direct, 1 leg) |
-    | D 300 | STNIGHT | Berlin/Hamburg → Malmö (night section only) |
-    | D 30 | STTRAIN | Malmö → Oslo (day train) |
-    | 3940 | STTRAIN | Malmö → Stockholm (day continuation) |
-    | 306 | STTRAIN | Hamburg → Stockholm (day train) |
+    | Number | Type | Route | Season |
+    |--------|------|-------|--------|
+    | D 10300/10301 | STNIGHT | Berlin/Hamburg ↔ Stockholm | seasonal (not Dec–Easter) |
+    | D 300/301 | STNIGHT | Berlin/Hamburg ↔ Malmö | same as D 10300 (night section) |
+    | D 30/31 | STTRAIN | Malmö ↔ Oslo (via Göteborg) | since 15.06.2026, quasi-daily |
+    | 3940/3941 | STTRAIN | Stockholm ↔ Malmö ↔ Copenhagen | year-round, daily |
+    | 306/307 | STTRAIN | Stockholm ↔ Hamburg (via Copenhagen) | since 04.05.2026, daily |
+    | 304/305 | STNIGHT | Malmö ↔ Austria (via Hamburg) | winter + summer |
+    | 3908/3909 | STTRAIN | Malmö ↔ Mora (+bus Sälen) | winter, Saturdays |
 
     D 300 + 3940 = same physical train as D 10300, split at Malmö. Shared berths (NTB*)
-    are only offered on the D 300 + 3940 transfer route, never on D 10300 direct.
+    are only offered on the D 300 transfer route, never on D 10300 direct.
 
     ## Authentication
 
@@ -25,21 +27,25 @@ info:
 
     ## Stations
 
+    Major stations (99 total available via `/navigation/stops`):
+
     | Station | Search value | EVA |
     |---------|-------------|-----|
     | Berlin | `Berlin` | 800010100 |
-    | Hamburg | `Hamburg` | — |
+    | Hamburg | `Hamburg` | 800020400 |
     | Dresden | `Dresden` | — |
-    | Malmö | — | 740000003 |
+    | Malmö | `Malmö C` | 740000003 |
     | Stockholm | `740000001` | 740000001 |
+    | Göteborg | `Göteborg` | — |
     | Oslo | `760000100` | 760000100 |
+    | Zell am See | — | 810000320 |
 
-    Search uses name strings; booking uses EVA numbers.
+    Search uses name strings or EVA numbers; booking uses EVA numbers.
 
     ## Direction
 
-    - `outbound`: origin is Berlin, Hamburg, or Dresden
-    - `inbound`: origin is Stockholm
+    - `outbound`: origin is Berlin, Hamburg, Dresden, or Malmö (depending on route)
+    - `inbound`: origin is Stockholm or Oslo
 
     Prices in SEK. 12 endpoints total.
 servers:
