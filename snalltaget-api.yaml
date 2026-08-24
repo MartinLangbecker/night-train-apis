@@ -9,12 +9,15 @@ info:
 
     | Number | Type | Route | Season |
     |--------|------|-------|--------|
-    | D 10300/10301 | STNIGHT | Berlin/Hamburg ↔ Stockholm | seasonal (not Dec–Easter) |
+    | D 10300/10301 | STNIGHT | Berlin/Hamburg ↔ Stockholm | seasonal (~Apr–Dec) |
     | D 300/301 | STNIGHT | Berlin/Hamburg ↔ Malmö | same as D 10300 (night section) |
     | D 30/31 | STTRAIN | Malmö ↔ Oslo (via Göteborg) | since 15.06.2026, quasi-daily |
     | 3940/3941 | STTRAIN | Stockholm ↔ Malmö ↔ Copenhagen | year-round, daily |
     | 306/307 | STTRAIN | Stockholm ↔ Hamburg (via Copenhagen) | since 04.05.2026, daily |
-    | 304/305 | STNIGHT | Malmö ↔ Austria (via Hamburg) | winter + summer |
+    | 304/305 | STNIGHT | Malmö ↔ Austria (via Hamburg) | winter + summer, Fr |
+    | 24/25 | STNIGHT | Malmö ↔ Åre (summer) | Aug–Sep, ~2x/wk |
+    | 3900–3905 | STNIGHT | Malmö ↔ Storlien/Åre/Vemdalen | winter, variable |
+    | 13904/13905 | STNIGHT | Malmö ↔ Vemdalen (Liegewagen-split) | winter Fr/Sa |
     | 3908/3909 | STTRAIN | Malmö ↔ Mora (+bus Sälen) | winter, Saturdays |
 
     D 300 + 3940 = same physical train as D 10300, split at Malmö. Shared berths (NTB*)

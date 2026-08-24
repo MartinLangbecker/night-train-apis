@@ -51,8 +51,12 @@ Anonymous Bearer token — no account needed:
 | D 10300/10301 | STNIGHT | Berlin/Hamburg ↔ Stockholm (direct) | ~Apr–Dec, Mo–Fr+So |
 | D 300/301 | STNIGHT | Berlin/Hamburg ↔ Malmö (night section) | same as D 10300 |
 | 304/305 | STNIGHT | Malmö ↔ Copenhagen ↔ Hamburg ↔ Austria | Winter (Dec–Mar), Summer (Jul), Fr |
+| 24/25 | STNIGHT | Malmö ↔ Åre (Sommer-Nachtzug) | Aug–Sep, ~2x/Woche |
+| 3900/3901 | STNIGHT | Malmö ↔ Storlien (via Östküste) | Winter, variable Tage |
+| 3902/3903 | STNIGHT | Malmö ↔ Storlien (via Westküste) | Winter, variable Tage |
+| 3904/3905 | STNIGHT | Malmö ↔ Åre/Duved (Sitzwagen-Sektion) | Winter Fr/Sa |
+| 13904/13905 | STNIGHT | Malmö ↔ Vemdalen-Röjan (Liegewagen-Sektion) | Winter Fr/Sa (Hin+Rück-Pflicht) |
 | 3908/3909 | STTRAIN | Malmö ↔ Stockholm ↔ Mora (+bus Sälen) | Winter (Dec–Apr), Sa |
-| ? | STNIGHT | Stockholm → Åre/Jämtland/Härjedalen | Winter + Summer/Autumn |
 
 ### D 300/10300 — Nachtzug Berlin ↔ Stockholm
 
@@ -64,21 +68,68 @@ Stops: Berlin Hbf → (Dresden) → Hamburg Hbf → Malmö C → (Stockholm C)
 
 ### D 30/31 — Tageszug Malmö ↔ Oslo
 
-| Station | Dep (→Oslo) | EVA |
-|---------|-------------|-----|
-| Malmö C | 06:38 | 740000003 |
-| Lund C | 06:48 | 740000120 |
-| Helsingborg C | 07:14 | 740000044 |
-| Halmstad C | 07:55 | 740000080 |
-| Varberg | 08:29 | 740000110 |
-| Göteborg-Mölndal | 09:08 | — |
-| Göteborg-Gamlestaden | 09:16 | — |
-| Trollhättan | 09:46 | 740000191 |
-| Sarpsborg | 11:55 | 760000527 |
-| Fredrikstad | 12:10 | 760000522 |
-| Oslo S | 13:16 | 760000100 |
+| Station | Dep (→Oslo) | Dep (→Malmö) | EVA |
+|---------|-------------|--------------|-----|
+| Malmö C | 06:38 | 21:25 arr | 740000003 |
+| Lund C | 06:48 | — | 740000120 |
+| Helsingborg C | 07:14 | — | 740000044 |
+| Halmstad C | 07:55 | — | 740000080 |
+| Varberg | 08:29 | — | 740000110 |
+| Göteborg-Mölndal | 09:08 | — | — |
+| Göteborg-Gamlestaden | 09:16 | — | — |
+| Trollhättan | 09:46 | — | 740000191 |
+| Sarpsborg | 11:55 | — | 760000527 |
+| Fredrikstad | 12:10 | — | 760000522 |
+| Oslo S | 13:16 arr | 14:48 | 760000100 |
 
 Norwegian stops (Sarpsborg, Fredrikstad) bookable as destination only, not as boarding point.
+Products: Sitz (299–399 SEK), Private Compartment Seats (1.316–2.256 SEK).
+
+### 24/25 — Sommer-Nachtzug Malmö ↔ Åre
+
+| Direction | Train | Dep | Arr |
+|-----------|-------|-----|-----|
+| → Åre | 24 | Malmö 16:35 | Åre 07:35+1 |
+| → Malmö | 25 | Åre 16:40 | Malmö 07:15+1 |
+
+Season: Aug–Sep, ~2x/Woche (Mi+Sa). Stops via Östküste (Hässleholm, Alvesta, Nässjö, Linköping, Norrköping, Stockholm, Uppsala, Östersund).
+
+Products: **All** — Sitz (499 SEK), NTB (874 SEK), Private Comp (3.499 SEK), First Class Seat (874 SEK), First Class Private Comp (3.846 SEK).
+
+### 3900–3903 — Winter-Nachtzüge Malmö ↔ Storlien
+
+Two routing variants, variable operating days (matched to changeover days):
+
+**Via Östküste (3900/3901):** Malmö → Lund → Hässleholm → Alvesta → Nässjö → Linköping → Norrköping → Stockholm → Uppsala → Östersund → Undersåker → Åre → Duved → Enafors → Storlien
+
+**Via Westküste (3902/3903):** Malmö → Lund → Helsingborg → Halmstad → Göteborg-Mölndal → Stockholm → Uppsala → Östersund → Undersåker → Åre → Duved → Enafors → Storlien
+
+| Train | Route | Dep | Arr | Days |
+|-------|-------|-----|-----|------|
+| 3900 | Malmö → Storlien (Öst) | 16:35 | ~08:55+1 | Sa, Mi (Dec–Apr) |
+| 3901 | Storlien → Malmö (Öst) | — | — | So, Do |
+| 3902 | Malmö → Storlien (West) | 15:20 | ~06:05+1 | Mi, Sa selected |
+| 3903 | Storlien → Malmö (West) | 16:40 | 08:45+1 | Mo, Do, So selected |
+
+Products: Sitz (499–999 SEK), Private Compartment (2.999–6.499 SEK). No NTB on these.
+
+Transfers available from Östersund to Vemdalen/Funäsfjällen ski areas on selected dates.
+
+### 3904/13904 + 3905/13905 — Vemdalen Ski Trains (Winter Fr/Sa)
+
+Same physical train departing Malmö 15:25 (Fridays), split into two sections:
+
+| Train | Destination | Products | Notes |
+|-------|-------------|----------|-------|
+| 3904 | Åre (07:35) → Duved (07:55) | Sitz only (699+ SEK) | Sitzwagen-Sektion |
+| 13904 | Vemdalen-Röjan (08:10) | NTB only (1.249+ SEK) | Liegewagen-Sektion |
+| 3905 | Duved (dep) → Malmö | Sitz only | Return Saturdays |
+| 13905 | Vemdalen-Röjan (16:00) → Malmö (08:45+1) | NTB only (999+ SEK) | Return Saturdays |
+
+**Booking restriction:** Berth/Private only available as return trip (Fri out + Sat back).
+No service properties (no KROG, no BAG) on 13904/13905.
+
+Season: Fridays 18.12.2026–12.02.2027 and 12.03–02.04.2027.
 
 ### 306/307 — Tageszug Stockholm ↔ Hamburg
 
@@ -138,30 +189,35 @@ Season 2026/27: Fri departures 18.12.2026–14.03.2027 (winter), Jul 2026 (summe
 
 ## Shared Berth Discovery (Aug 2026)
 
-**Shared berths (NTB*) are only offered on the transfer route (D 300 + 3940), never on D 10300 direct.**
+**Shared berths (NTB*) are NOT offered on D 10300 direct Berlin→Stockholm.**
 
-- Direct search Berlin→Stockholm: only Seat (SP*) and Private Compartment (NTPC*)
-- Transfer search (same train!): additionally Shared Berth (NTB*)
-- Separate search Berlin→Malmö: NTB available at lower price (749 SEK vs 1.048 in bundle)
-- API rejects NTB tariff on D 10300: "Tariff conditions broken"
+NTB availability across the network:
 
-Marketing pages confirm: Berlin→Stockholm only advertises Seat + Private Compartment.
-Oslo page explicitly lists all three options (Seat, Berth shared, Private) for Berlin→Malmö leg.
+| Route | NTB available? | Notes |
+|-------|---------------|-------|
+| D 10300 (Berlin→Stockholm direct) | ❌ | API rejects: "Tariff conditions broken" |
+| D 300 (Berlin→Malmö transfer) | ✓ | 749–1.998 SEK |
+| D 300+3940 bundle (Berlin→Stockholm) | ✓ | 1.048–1.998 SEK |
+| 13904/13905 (Vemdalen) | ✓ | NTB ONLY, no other products |
+| 24/25 (Sommer Åre) | ✓ | 874–973 SEK |
+| 3900–3903 (Winter Åre) | ❌ | Only Seat + Private |
 
-Prices observed (NTBSF): 749–1.998 SEK (historically 399–499 SEK).
+Separate search Berlin→Malmö yields NTB at lower price (749) than the bundle (1.048).
+Marketing pages for Berlin→Stockholm advertise only Seat + Private Compartment.
+Oslo page explicitly lists all three options for the Berlin→Malmö leg.
 
 ## Product Families
 
 | Code | Name | Available on |
 |------|------|-------------|
 | SPNF/SF/FF | Seat | All routes |
-| SPPCNF/SF/FF | Private Compartment Seats | Day trains (306, 3940) |
+| SPPCNF/SF/FF | Private Compartment Seats | Day trains (306, 3940, D 30) |
 | NTPCSF/FF | Private Compartment (night) | Night trains |
 | NTPCCNF/SF/FF | Private Compartment Comfort | Rare (Austria?) |
-| **NTBNF/SF/FF** | **Berth shared** | **Transfer only (D 300)** |
-| FCSNF/SF/FF | First Class Seat | Hamburg routes (306) |
-| FCSCNF/SF/FF | First Class Seat in Compartment | Hamburg routes (306) |
-| FCPCNF/SF/FF | First Class Private Compartment | Hamburg routes (306) |
+| **NTBNF/SF/FF** | **Berth shared** | **D 300, 13904/13905, Zug 24/25** |
+| FCSNF/SF/FF | First Class Seat | 306 + Zug 24/25 (Sommer-Nachtzug) |
+| FCSCNF/SF/FF | First Class Seat in Compartment | 306 |
+| FCPCNF/SF/FF | First Class Private Compartment | 306 + Zug 24/25 |
 | NTPCE | Extra Passenger Private Comp | Add-on |
 | PET | Travel with a pet | Add-on |
 
@@ -192,9 +248,11 @@ Returned by `/orientation/searchservices`:
 | Code | Description | Trains |
 |------|-------------|--------|
 | KIOSK | Kiosk (snack sales) | D 300, D 10300 (night) |
-| KROG | Speisewagen (restaurant car) | D 30, 3940, 306 (day) |
+| KROG | Speisewagen (restaurant car) | D 30, 3940, 306, 3900 (day + ski nights) |
+| BAG | Baggage check-in available (498 SEK return) | 3900 (ski trains) |
+| SKI | Ski check-in possible | 3900 (ski trains) |
 
-Also returns `travelInfo[]` with current construction/diversion advisories.
+Also returns `travelInfo[]` with current construction/diversion advisories or booking restrictions.
 
 ## Comfort Zones
 
