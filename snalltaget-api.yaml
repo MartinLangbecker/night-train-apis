@@ -44,7 +44,7 @@ info:
     | Zell am See | — | 810000320 |
 
     Search uses name strings or EVA numbers; booking uses EVA numbers.
-    Prices in SEK. 12 endpoints total.
+    Prices in SEK. 14 endpoints total.
 servers:
   - url: https://apiv2.snalltaget.se
     description: API server
@@ -338,6 +338,81 @@ paths:
               schema:
                 type: string
                 description: New Bearer token
+
+  /navigation/stops:
+    get:
+      tags:
+        - Reference Data
+      summary: Get All Stations
+      operationId: getStops
+      description: |-
+        Returns all 99 stations served by Snälltåget with codes, short codes, and synonyms.
+        Covers SE, NO, DK, DE, AT.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code:
+                      type: string
+                      description: EVA number or internal code
+                      example: '740000001'
+                    shortCode:
+                      type: string
+                      description: Short abbreviation
+                      example: CST
+                    name:
+                      type: string
+                      description: Station name
+                      example: Stockholm C
+                    synonyms:
+                      type: array
+                      items:
+                        type: string
+                      description: Alternative names for search
+                      example: ['Stockholm C', 'Centralen', 'Stockholm']
+
+  /fare/passengertypes:
+    get:
+      tags:
+        - Reference Data
+      summary: Get Passenger Types
+      operationId: getPassengerTypes
+      description: |-
+        Returns available passenger types with age restrictions.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code:
+                      type: string
+                      enum:
+                        - AD
+                        - CH
+                        - YTH
+                        - ST
+                        - SR
+                      example: AD
+                    name:
+                      type: string
+                      example: Adult
+                    minAge:
+                      type: integer
+                      example: 0
+                    maxAge:
+                      type: integer
+                      example: 99
 
   /interrail/validate:
     post:

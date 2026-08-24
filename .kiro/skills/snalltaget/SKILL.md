@@ -85,14 +85,19 @@ Stops: Berlin Hbf → (Dresden) → Hamburg Hbf → Malmö C → (Stockholm C)
 Norwegian stops (Sarpsborg, Fredrikstad) bookable as destination only, not as boarding point.
 Products: Sitz (299–399 SEK), Private Compartment Seats (1.316–2.256 SEK).
 
-### 24/25 — Sommer-Nachtzug Malmö ↔ Åre
+### 24/25 — Sommer-Nachtzug Malmö ↔ Åre/Storlien
 
 | Direction | Train | Dep | Arr |
 |-----------|-------|-----|-----|
-| → Åre | 24 | Malmö 16:35 | Åre 07:35+1 |
-| → Malmö | 25 | Åre 16:40 | Malmö 07:15+1 |
+| → Mountains | 24 | Malmö 16:35 | Storlien 08:55+1 |
+| → Malmö | 25 | Storlien 15:25 | Malmö ~07:15+1 |
 
-Season: Aug–Sep, ~2x/Woche (Mi+Sa). Stops via Östküste (Hässleholm, Alvesta, Nässjö, Linköping, Norrköping, Stockholm, Uppsala, Östersund).
+Season: 24.Jun–4.Oct 2026 (no service 13–18 Aug due to maintenance).
+Regular days: Mi+Sa towards mountains, Do+So from mountains.
+
+Stops: Malmö → Lund → Hässleholm → Alvesta → Nässjö → Linköping → Norrköping → Stockholm (arr 22:30, dep 22:55) → Uppsala (23:40) → Östersund (06:15) → Undersåker (07:20) → Åre (07:35) → Duved (07:55) → Enafors (08:40) → Storlien (08:55).
+
+Transfer buses from: Östersund (→ Ljungdalen, Funäsdalen, Bruksvallarna, Ramundberget), Undersåker (→ Edsåsdalen, Trillevallen, Vålådalen), Enafors (→ Storulvån).
 
 Products: **All** — Sitz (499 SEK), NTB (874 SEK), Private Comp (3.499 SEK), First Class Seat (874 SEK), First Class Private Comp (3.846 SEK).
 
@@ -117,18 +122,20 @@ Transfers available from Östersund to Vemdalen/Funäsfjällen ski areas on sele
 
 ### 3904/13904 + 3905/13905 — Vemdalen Ski Trains (Winter Fr/Sa)
 
-Same physical train departing Malmö 15:25 (Fridays), split into two sections:
+Same physical train departing Malmö 15:25 (Fridays), via Westküste (Helsingborg, Halmstad, Göteborg-Mölndal), Stockholm (22:55), Uppsala (23:35). Train splits after Östersund into two sections:
 
-| Train | Destination | Products | Notes |
-|-------|-------------|----------|-------|
-| 3904 | Åre (07:35) → Duved (07:55) | Sitz only (699+ SEK) | Sitzwagen-Sektion |
-| 13904 | Vemdalen-Röjan (08:10) | NTB only (1.249+ SEK) | Liegewagen-Sektion |
-| 3905 | Duved (dep) → Malmö | Sitz only | Return Saturdays |
-| 13905 | Vemdalen-Röjan (16:00) → Malmö (08:45+1) | NTB only (999+ SEK) | Return Saturdays |
+| Train | Section | Destinations | Products |
+|-------|---------|-------------|----------|
+| 3904 | Sitzwagen | Östersund (06:05) → Undersåker → Åre (07:35) → Duved (07:55) | Sitz only (699+) |
+| 13904 | Liegewagen | → Vemdalen-Röjan (08:10) | NTB only (1.249+) |
+| 3905 | Sitzwagen | Duved → Malmö (return) | Sitz only |
+| 13905 | Liegewagen | Vemdalen-Röjan (16:00) → Malmö (08:45+1) | NTB only (999+) |
 
-**Booking restriction:** Berth/Private only available as return trip (Fri out + Sat back).
-No service properties (no KROG, no BAG) on 13904/13905.
+Split logic: 13904 is a separate train number in the system (no Östersund as bookable stop),
+but physically coupled with 3904 until the junction towards Sveg/Vemdalen.
+Both depart Stockholm 22:55, Uppsala 23:35.
 
+**Booking restriction:** NTB only available as return trip (Fri out + Sat back).
 Season: Fridays 18.12.2026–12.02.2027 and 12.03–02.04.2027.
 
 ### 306/307 — Tageszug Stockholm ↔ Hamburg
