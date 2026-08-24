@@ -57,6 +57,7 @@ Anonymous Bearer token — no account needed:
 | 3904/3905 | STNIGHT | Malmö ↔ Åre/Duved (seated section) | Winter Fr/Sa |
 | 13904/13905 | STNIGHT | Malmö ↔ Vemdalen-Röjan (couchette section) | Winter Fr/Sa (Hin+Rück-Pflicht) |
 | 3908/3909 | STTRAIN | Malmö ↔ Stockholm ↔ Mora (+bus Sälen) | Winter (Dec–Apr), Sa |
+| 3906/3907 | STNIGHT | Malmö ↔ Mora (Vasaloppet) | annual, late Feb |
 
 ### D 300/10300 — Night train Berlin ↔ Stockholm
 
@@ -137,6 +138,39 @@ Both depart Stockholm 22:55, Uppsala 23:35.
 
 **Booking restriction:** NTB only available as return trip (Fri out + Sat back).
 Season: Fridays 18.12.2026–12.02.2027 and 12.03–02.04.2027.
+
+### 3908/3909 — Day train Malmö ↔ Mora (+bus Sälen)
+
+Saturdays 19.12.2026–10.04.2027. Three routing variants depending on date:
+
+**Via east coast (most dates):** Malmö 05:55 → Lund → Hässleholm → Alvesta → Nässjö → Linköping → Stockholm 10:55 → Uppsala 11:25 → Mora 14:05
+Dates: 19/12, 26/12, 2/1, 9/1, 16/1, 30/1, 6/2, 27/2, 27/3, 3/4
+
+**Via west coast:** Malmö 05:55 → Lund → Helsingborg → Halmstad → Göteborg-Mölndal → Mora 14:05
+Dates: 23/1, 13/2, 6/3, 13/3 (no Stockholm stop!)
+
+**Short route:** Malmö 07:15 → Lund → Hässleholm → Alvesta → Mora
+Dates: 20/2, 20/3
+
+Bus connection Mora → Sälen (Hundfjällstorget, Högfjällshotellet, Lindvallen, Tandådalen).
+
+### 3906/3907 — Vasaloppet special (annual, late Feb/early Mar)
+
+Single event train for the Vasaloppet ski race. 2026: outbound 28.02, return 01.03.
+
+| Train | Route | Dep | Arr |
+|-------|-------|-----|-----|
+| 3906 | Malmö → Mora | 28.02 13:30 | ~01:00+1 (sleep on board until bus 03:15) |
+| 3907 | Mora → Malmö | 01.03 21:25 | Malmö 09:30+1 |
+
+Unique routing: Malmö → Lund → Halmstad → Göteborg-Mölndal → Alingsås → Falköping → Skövde → Stockholm 21:20 → Mora ~01:00.
+
+Fixed prices (return trip mandatory, not dynamic):
+- Private compartment: 9.998 SEK (7.998 from Stockholm)
+- Shared berth: 2.498 SEK (1.998 from Stockholm)
+
+Includes: bus Mora→Sälen, breakfast both directions.
+Pseudostation for booking: "Vasaloppet" (EVA 740074531).
 
 ### 306/307 — Day train Stockholm ↔ Hamburg
 
