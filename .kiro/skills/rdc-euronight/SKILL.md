@@ -87,6 +87,51 @@ Multiple `EntityRequests` can be sent in a single `ReadPriceCategories` call —
 - **Do + Sa**: to Berlin Lichtenberg
 - **Di**: to Hamburg only (no Berlin arrival)
 
+## Train Formation (Vagonweb, 02.09.–12.12.2026)
+
+Sources:
+- [EN 344](https://www.vagonweb.cz/razeni/vlak.php?zeme=BTE&kategorie=EN&cislo=344&nazev=RDC+EuroNight&rok=2026)
+- [EN 345](https://www.vagonweb.cz/razeni/vlak.php?zeme=BTE&kategorie=EN&cislo=345&nazev=RDC+EuroNight&rok=2026)
+
+| Wg | Owner | Type | Category | Capacity | Notes |
+|----|-------|------|----------|----------|-------|
+| — | RPOOL | 193 | Electric loco (Vectron) | — | |
+| 21 | RAG | Bvcmz 248.5 | Couchette | 60 berths | as required |
+| 22 | RAG | Bvcmz 248.5 | Couchette | 60 berths | as required |
+| 23 | RAG | Bvcmz 248.5 | Couchette | 60 berths | Comp. 11 = pets |
+| 24 | BTEX | Bvcmbz 249.1 | Couchette + accessible | 32–48 berths | Comp. 2+9 staff, 3+10 logistics |
+| 25 | RAG | WLABmz AB32 | Sleeper 1st+2nd | 2–6 + 13–26 beds | Comp. 1 pets, seats 71–76 Deluxe |
+| 26 | RAG | WLABmz AB32 | Sleeper 1st+2nd | 2–6 + 13–26 beds | Seats 71–76 Deluxe |
+| 27 | RAG | WLABmz AB32 | Sleeper 1st+2nd | 2–6 + 13–26 beds | Seats 71–76 Deluxe |
+| 28 | RAG | WLABmz AB32 | Sleeper 1st+2nd | 2–6 + 13–26 beds | Seats 71–76 Deluxe, as required |
+| 31 | RAG | Bimz 264 | Seated 2nd | 25 (comp.) + 35 (open) = 60 | Comp. 111–115 pets |
+| 32 | RAG | Bimz 264 | Seated 2nd | 60 | as required |
+| 33 | RAG | Bimz 264 | Seated 2nd | 60 | as required |
+
+### Capacity Summary
+
+| API entity | Type | Fixed coaches | Capacity (fixed) | + as required | Max |
+|-----------|------|--------------|-----------------|---------------|-----|
+| Sitz | Bimz 264 | 1 (Wg 31) | 60 | +120 (Wg 32, 33) | 180 |
+| Liege | Bvcmz 248.5 / 249.1 | 2 (Wg 23, 24) | ~96 | +120 (Wg 21, 22) | 228 |
+| Bett | WLABmz AB32 (2nd class) | 3 (Wg 25–27) | 78 | +26 (Wg 28) | 104 |
+| Bett 1.Kl | WLABmz AB32 (Deluxe) | 3 (Wg 25–27) | 18 | +6 (Wg 28) | 24 |
+
+WLABmz AB32 layout per car: 13 standard compartments (2-berth, washbasin) + 2 Deluxe compartments (2–3 berth, shower+toilet).
+
+### Price Tiers (Berlin→Stockholm, Normalpreis)
+
+| Entity | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+|--------|--------|--------|--------|--------|
+| Sitz | 60€ | 80€ | — | — |
+| Liege Single | 120€ | 150€ | 170€ | 200€ |
+| Liege Cabin | 360€ | 430€ | 470€ | 500€ |
+| Bett Single | 200€ | 250€ | 300€ | — |
+| Bett Cabin | 300€ | 375€ | 450€ | — |
+| Bett 1.Kl Cabin | 420€ | 495€ | 525€ | 600€ |
+
+Spar = 85% of Normal, Interrail = 80% of Normal.
+
 ## Example: ReadTrainConnections
 
 ```json
