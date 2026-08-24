@@ -1,0 +1,472 @@
+openapi: 3.0.0
+info:
+  title: RDC EuroNight API
+  version: 1.0.0
+  description: |-
+    GraphQL pricing API for [nachtexpress.de](https://www.nachtexpress.de) — RDC EuroNight EN 344/345 (Berlin/Hamburg ↔ Stockholm).
+
+    Single POST endpoint, operation selected via GraphQL query body. No auth, introspection disabled.
+
+    ## Stations
+
+    | ID | Name |
+    |----|------|
+    | 68 | Berlin Lichtenberg |
+    | 67 | Berlin Gesundbrunnen |
+    | 5  | Hamburg Hbf |
+    | 57 | Stockholm Central |
+
+    Intermediate stops: 58 Norrköping, 59 Linköping, 60 Nässjö, 61 Alvesta, 62 Hässleholm, 64 Lund, 65 København, 66 Padborg, 70 Mölndals nedre.
+
+    ## Entity Types
+
+    | HashID | Title | Booking |
+    |--------|-------|---------|
+    | Z5RRRzb1J4 | Sitz | Single |
+    | BKVpAEyGbm | Liege | Single, Cabin |
+    | mkkJKnMnWm | Bett | Single, Cabin |
+    | mdoeXD6Lj4 | Bett 1. Klasse | Cabin only |
+
+    ## Price Categories
+
+    35 = Normalpreis, 34 = Sparpreis (85%), 36 = Interrail (80%).
+    Discounts: Children 50%, Students/Seniors 10%.
+
+    ## Traffic Days
+
+    EN 344 (→Stockholm): Mo+Fr from Berlin, Mi from Hamburg only.
+    EN 345 (→Berlin): Do+Sa full route, Di only to Hamburg.
+servers:
+  - url: https://tickets.rdc-deutschland.de
+paths:
+  /booking#Init:
+    post:
+      tags:
+        - Configuration
+      summary: Init
+      operationId: init
+      description: |-
+        Returns brand configuration and upcoming seasons. Call on page load.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: "query Init { init { BrandID UpcomingSeasons EnableFemaleCabinSwitcher SingleCabinTypeTitle FemaleCabinTypeTitle PrivateCabinTypeTitle } }"
+              variables: {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      init:
+                        type: object
+                        properties:
+                          BrandID:
+                            type: string
+                          UpcomingSeasons:
+                            type: array
+                            items:
+                              type: object
+                          EnableFemaleCabinSwitcher:
+                            type: boolean
+                          SingleCabinTypeTitle:
+                            type: string
+                            example: Einzelplatz
+                          FemaleCabinTypeTitle:
+                            type: string
+                            example: Damen-Abteil
+                          PrivateCabinTypeTitle:
+                            type: string
+                            example: Privatabteil
+  /booking#ReadDepartureStations:
+    post:
+      tags:
+        - Stations
+      summary: ReadDepartureStations
+      operationId: readDepartureStations
+      description: |-
+        Returns available departure stations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: "query ReadDepartureStations($VehiclesEnabled: Boolean!) { readDepartureStations(VehiclesEnabled: $VehiclesEnabled) { ID Title } }"
+              variables:
+                VehiclesEnabled: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      readDepartureStations:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Station'
+  /booking#ReadArrivalStations:
+    post:
+      tags:
+        - Stations
+      summary: ReadArrivalStations
+      operationId: readArrivalStations
+      description: |-
+        Returns available arrival stations for a given departure station.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: "query ReadArrivalStations($DepartureStationID: Int!, $VehiclesEnabled: Boolean!) { readArrivalStations(DepartureStationID: $DepartureStationID, VehiclesEnabled: $VehiclesEnabled) { ID Title } }"
+              variables:
+                DepartureStationID: 68
+                VehiclesEnabled: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      readArrivalStations:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Station'
+  /booking#ReadTrainConnections:
+    post:
+      tags:
+        - Connections
+      summary: ReadTrainConnections
+      operationId: readTrainConnections
+      description: |-
+        Returns available train connections (dates) for a station pair.
+        Each connection has a HashID used in subsequent queries.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: "query ReadTrainConnections($DepartureStationID: Int!, $ArrivalStationID: Int!, $VehiclesEnabled: Boolean!) { readTrainConnections(DepartureStationID: $DepartureStationID, ArrivalStationID: $ArrivalStationID, VehiclesEnabled: $VehiclesEnabled) { HashID StartDate DepartureNextDay UnreliableTimeSchedule } }"
+              variables:
+                DepartureStationID: 68
+                ArrivalStationID: 57
+                VehiclesEnabled: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      readTrainConnections:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TrainConnection'
+  /booking#ReadTimeSchedule:
+    post:
+      tags:
+        - Connections
+      summary: ReadTimeSchedule
+      operationId: readTimeSchedule
+      description: |-
+        Returns departure/arrival times and train number for a specific connection and station pair.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: "query ReadTimeSchedule($ConnectionHashID: String!, $DepartureStationID: Int!, $ArrivalStationID: Int!) { readTimeSchedule(ConnectionHashID: $ConnectionHashID, DepartureStationID: $DepartureStationID, ArrivalStationID: $ArrivalStationID) { DepartureTime DepartureDate ArrivalTime ArrivalDate TrainNumber } }"
+              variables:
+                ConnectionHashID: "abc123"
+                DepartureStationID: 68
+                ArrivalStationID: 57
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      readTimeSchedule:
+                        $ref: '#/components/schemas/TimeSchedule'
+  /booking#ReadEntityTypes:
+    post:
+      tags:
+        - Availability
+      summary: ReadEntityTypes
+      operationId: readEntityTypes
+      description: |-
+        Returns available accommodation types (Sitz, Liege, Bett, Bett 1. Klasse) for a connection.
+        Each entity type has booking options (Single, Single-female, Cabin).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: "query ReadEntityTypes($TrainConnectionHashID: ID!) { readEntityTypes(TrainConnectionHashID: $TrainConnectionHashID) { ID Title Icon InfoPreview BookingOptions { Code Title } } }"
+              variables:
+                TrainConnectionHashID: "abc123"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      readEntityTypes:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EntityType'
+  /booking#ReadPriceCategories:
+    post:
+      tags:
+        - Pricing
+      summary: ReadPriceCategories
+      operationId: readPriceCategories
+      description: |-
+        Returns price categories (Normalpreis, Sparpreis, Interrail) for given entity requests.
+
+        Supports batching: send multiple EntityRequests with matching EntityTypeHashIDs in one call.
+
+        - `IsCabinBooking: false` → single place (Einzelplatz / Damen-Abteil)
+        - `IsCabinBooking: true` → private compartment (Privatabteil)
+        - Empty `PriceCategories[]` in response = sold out for that entity/option combination
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: "query ReadPriceCategories($input: PriceCategoryInput!) { readPriceCategories(input: $input) { RequestID PriceCategories { ID Title SubTitle Price { Amount Currency } SinglePrice { Amount Currency } } } }"
+              variables:
+                input:
+                  ArrivalStationID: 57
+                  ConsiderExpiryDate: true
+                  DepartureStationID: 68
+                  EntityRequests:
+                    - AddOns: []
+                      AmountAdults: 1
+                      AmountBaby: 0
+                      AmountChildren: 0
+                      AmountSeniors: 0
+                      AmountStudents: 0
+                      CollectionTag: null
+                      ExpectedPrice: null
+                      IsCabinBooking: false
+                      Passes: []
+                      PriceCategory: null
+                      RequestID: "550e8400-e29b-41d4-a716-446655440000"
+                      Type: "single"
+                  EntityTypeHashIDs:
+                    - "mkkJKnMnWm"
+                  TrainConnectionHashID: "abc123"
+                  Vehicles: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      readPriceCategories:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PriceCategoryResult'
+components:
+  schemas:
+    GraphQLRequest:
+      type: object
+      required:
+        - query
+        - variables
+      properties:
+        query:
+          type: string
+          description: GraphQL query string
+        variables:
+          type: object
+          description: GraphQL variables
+    Station:
+      type: object
+      properties:
+        ID:
+          type: integer
+          example: 68
+        Title:
+          type: string
+          example: Berlin Lichtenberg
+    TrainConnection:
+      type: object
+      properties:
+        HashID:
+          type: string
+          description: Unique connection identifier, used in subsequent queries
+          example: "xK9mPq2wL1"
+        StartDate:
+          type: string
+          format: date
+          description: Departure date
+          example: "2026-09-15"
+        DepartureNextDay:
+          type: boolean
+          description: Whether departure from the selected station is on the next calendar day
+        UnreliableTimeSchedule:
+          type: boolean
+          description: Whether the timetable for this connection is preliminary
+    TimeSchedule:
+      type: object
+      properties:
+        DepartureTime:
+          type: string
+          example: "20:08"
+        DepartureDate:
+          type: string
+          format: date
+          example: "2026-09-15"
+        ArrivalTime:
+          type: string
+          example: "09:57"
+        ArrivalDate:
+          type: string
+          format: date
+          example: "2026-09-16"
+        TrainNumber:
+          type: string
+          example: "EN 344"
+    EntityType:
+      type: object
+      properties:
+        ID:
+          type: string
+          description: HashID of the entity type
+          example: "mkkJKnMnWm"
+        Title:
+          type: string
+          example: Bett
+        Icon:
+          type: string
+        InfoPreview:
+          type: string
+        BookingOptions:
+          type: array
+          items:
+            type: object
+            properties:
+              Code:
+                type: string
+                description: Booking option code (single, single-female, cabin)
+                example: single
+              Title:
+                type: string
+                example: Einzelplatz
+    PriceCategoryResult:
+      type: object
+      properties:
+        RequestID:
+          type: string
+          format: uuid
+          description: Matches the RequestID from the input EntityRequests
+        PriceCategories:
+          type: array
+          description: Empty array means sold out
+          items:
+            type: object
+            properties:
+              ID:
+                type: integer
+                description: "35=Normalpreis, 34=Sparpreis, 36=Interrail"
+                example: 35
+              Title:
+                type: string
+                example: Normalpreis
+              SubTitle:
+                type: string
+              Price:
+                $ref: '#/components/schemas/Price'
+              SinglePrice:
+                $ref: '#/components/schemas/Price'
+    Price:
+      type: object
+      properties:
+        Amount:
+          type: number
+          format: float
+          example: 89.90
+        Currency:
+          type: string
+          example: EUR
+  parameters:
+    NEXLanguage:
+      name: NEX-Language
+      in: header
+      required: true
+      schema:
+        type: string
+        default: de
+      description: Language code
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      schema:
+        type: string
+        default: https://www.nachtexpress.de
+    Referer:
+      name: Referer
+      in: header
+      required: true
+      schema:
+        type: string
+        default: https://www.nachtexpress.de/
+    XBookingUrl:
+      name: x-booking-url
+      in: header
+      required: true
+      schema:
+        type: string
+        default: https://www.nachtexpress.de/de/buchen/

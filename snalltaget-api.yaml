@@ -1,0 +1,472 @@
+openapi: 3.0.0
+info:
+  title: Snälltåget API
+  version: 1.0.0
+  description: |-
+    Availability and pricing API for [snalltaget.se](https://www.snalltaget.se).
+    Night train D 10300/10301 operating Berlin/Hamburg ↔ Stockholm.
+
+    ## Authentication
+
+    Bearer token from `GET https://www.snalltaget.se/token/v2` (no credentials, User-Agent required).
+
+    ## Stations
+
+    | Station | API value |
+    |---------|-----------|
+    | Berlin | `Berlin` |
+    | Hamburg | `Hamburg` |
+    | Stockholm | `740000001` |
+
+    ## Direction
+
+    - `outbound`: origin is Berlin, Hamburg, or Dresden
+    - `inbound`: origin is Stockholm
+
+    Prices in SEK. 4 endpoints total.
+servers:
+  - url: https://apiv2.snalltaget.se
+    description: API server
+  - url: https://www.snalltaget.se
+    description: Token server (auth only)
+paths:
+  /token/v2:
+    get:
+      tags:
+        - Authentication
+      summary: Get Bearer Token
+      operationId: getToken
+      servers:
+        - url: https://www.snalltaget.se
+      description: |-
+        Returns an anonymous Bearer token for API access. No credentials needed.
+
+        **Required:** `User-Agent` header with a browser-like value (Cloudflare blocks empty/default UA with 403).
+
+        Example: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36`
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: JWT Bearer token (15 min TTL)
+                  expires_in:
+                    type: integer
+                    description: Token lifetime in seconds
+                    example: 900
+
+  /orientation/calendar:
+    post:
+      tags:
+        - Availability
+      summary: Get Calendar Availability
+      operationId: getCalendar
+      description: |-
+        Returns per-day availability and cheapest price for a given route and date range.
+        Each date entry contains the cheapest available price (amount), remaining capacity,
+        and quota at the current price tier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - direction
+                - origin
+                - destination
+                - begin
+                - end
+                - passengers
+              properties:
+                direction:
+                  type: string
+                  enum:
+                    - outbound
+                    - inbound
+                  description: "'outbound' if origin is Berlin/Hamburg/Dresden, 'inbound' if origin is Stockholm"
+                  example: outbound
+                origin:
+                  type: string
+                  description: Station identifier
+                  example: Berlin
+                destination:
+                  type: string
+                  description: Station identifier
+                  example: '740000001'
+                begin:
+                  type: string
+                  format: date
+                  description: Start of date range
+                  example: '2026-09-01'
+                end:
+                  type: string
+                  format: date
+                  description: End of date range
+                  example: '2026-09-30'
+                passengers:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - AD
+                  description: Passenger types (AD = adult)
+                  example:
+                    - AD
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  calendar:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        amount:
+                          type: number
+                          format: float
+                          description: Cheapest available price in SEK
+                          example: 499.0
+                        quota:
+                          type: integer
+                          description: Remaining seats at the current amount price tier
+                          example: 17
+                        capacity:
+                          type: integer
+                          description: Remaining total capacity across all classes
+                          example: 34
+                    example:
+                      '2026-09-01':
+                        amount: 499.0
+                        quota: 17
+                        capacity: 34
+                      '2026-09-02':
+                        amount: 599.0
+                        quota: 8
+                        capacity: 22
+
+  /orientation/searchjourney:
+    post:
+      tags:
+        - Search
+      summary: Search Journey Offers
+      operationId: searchJourney
+      description: |-
+        Returns available offers for a specific departure date including product families,
+        comfort zones, travel legs, and pricing bundles.
+
+        A travel with 1 leg is a direct night train. 2 legs indicate a transfer.
+
+        Each bundle contains pricing, flexibility level, required items, and optional extras.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - origin
+                - destination
+                - departure
+                - oppositedate
+                - passengers
+                - travelWithpet
+              properties:
+                origin:
+                  type: string
+                  description: Station identifier
+                  example: Berlin
+                destination:
+                  type: string
+                  description: Station identifier
+                  example: '740000001'
+                departure:
+                  type: string
+                  format: date
+                  description: Departure date
+                  example: '2026-09-15'
+                oppositedate:
+                  type: string
+                  format: date
+                  description: Return date (used for round-trip context)
+                  example: '2026-09-20'
+                passengers:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                          - AD
+                        description: Passenger type (AD = adult)
+                  example:
+                    - type: AD
+                travelWithpet:
+                  type: boolean
+                  description: Whether travelling with a pet
+                  example: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offer:
+                    type: object
+                    properties:
+                      productFamilies:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ProductFamily'
+                      comfortZones:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ComfortZone'
+                      travels:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Travel'
+                      passengers:
+                        type: array
+                        items:
+                          type: object
+                  messages:
+                    type: array
+                    items:
+                      type: object
+
+  /orientation/searchservices:
+    post:
+      tags:
+        - Search
+      summary: Search Service Details
+      operationId: searchServices
+      description: |-
+        Returns detailed service information for given service identifiers.
+
+        ServiceIdentifier format: `0:RDA|{trainNr}|{STNIGHT|STTRAIN}|{date}|{departure}|{arrival}`
+
+        - STNIGHT: night train service
+        - STTRAIN: day train service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - serviceIdentifiers
+              properties:
+                serviceIdentifiers:
+                  type: array
+                  items:
+                    type: string
+                  description: Service identifier strings
+                  example:
+                    - '0:RDA|10300|STNIGHT|20260915|1830|0930'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceItem'
+                  itemCount:
+                    type: integer
+                    example: 1
+
+  /auth/refreshtoken:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh Token
+      operationId: refreshToken
+      description: |-
+        Refreshes the Bearer token. Send the current token in the Authorization header
+        with an empty request body.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: New token returned
+          content:
+            application/json:
+              schema:
+                type: string
+                description: New Bearer token
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |-
+        Token obtained from GET https://www.snalltaget.se/token/v2.
+        Requires User-Agent header to avoid Cloudflare 403.
+
+  schemas:
+    ProductFamily:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Product family code
+          example: SPNF
+        name:
+          type: string
+          description: Display name
+          example: Sitz Sparpreis
+
+    ComfortZone:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - NRR
+            - REBOOK
+            - REFUND
+          description: Comfort zone code
+          example: NRR
+        name:
+          type: string
+          example: Not Rebookable or Refundable
+
+    Travel:
+      type: object
+      properties:
+        routes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Route'
+
+    Route:
+      type: object
+      properties:
+        legs:
+          type: array
+          description: "1 leg = direct night train, 2 legs = transfer"
+          items:
+            $ref: '#/components/schemas/Leg'
+        bundles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bundle'
+
+    Leg:
+      type: object
+      properties:
+        origin:
+          type: string
+          example: Berlin
+        destination:
+          type: string
+          example: '740000001'
+        departure:
+          type: string
+          format: date-time
+        arrival:
+          type: string
+          format: date-time
+        serviceIdentifier:
+          type: string
+          example: '0:RDA|10300|STNIGHT|20260915|1830|0930'
+
+    Bundle:
+      type: object
+      properties:
+        id:
+          type: string
+        productFamilyId:
+          type: string
+          description: References ProductFamily.id
+          example: SPNF
+        price:
+          type: number
+          format: float
+          description: Current price in SEK
+          example: 499.0
+        originalPrice:
+          type: number
+          format: float
+          description: Original price before discounts
+          example: 499.0
+        flexibility:
+          type: string
+          enum:
+            - refundable
+            - rebookable
+            - nonrefundable
+          description: Flexibility level of the bundle
+          example: nonrefundable
+        requiredItems:
+          type: array
+          items:
+            type: object
+        options:
+          type: array
+          items:
+            type: object
+
+    ServiceItem:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Snälltåget 10300
+        serviceIdentifier:
+          type: string
+          example: '0:RDA|10300|STNIGHT|20260915|1830|0930'
+        serviceType:
+          type: object
+          properties:
+            name:
+              type: string
+              example: Night Train
+            code:
+              type: string
+              enum:
+                - STNIGHT
+                - STTRAIN
+              example: STNIGHT
+        serviceProperties:
+          type: array
+          items:
+            type: object
+        travelInfo:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+                example: Boarding Information
+              content:
+                type: string
+                example: Please arrive 30 minutes before departure.
+
+security:
+  - BearerAuth: []

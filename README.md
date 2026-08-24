@@ -48,6 +48,28 @@ Booking API for [leoexpress.com](https://www.leoexpress.com), including:
 > The Leo Express booking UI is a single-page application with no deep-link support.
 > There is no way to construct a URL that pre-fills search parameters or links to a specific connection.
 
+### Snälltåget (`snalltaget-api.yaml`)
+Booking API for [snalltaget.se](https://www.snalltaget.se), including:
+- Anonymous Bearer token auth (no account needed, auto-issued on first request)
+- Price calendar with cheapest-per-day, total capacity, and quota-at-tier fields
+- Journey search with direct train filtering (single-leg routes)
+- 5 product families: seats (non-flex/semi-flex/full-flex), couchettes (full-flex/semi-flex)
+- 3 comfort zones: NRR (non-refundable), REBOOK, REFUND
+- Route: Berlin/Hamburg ↔ Stockholm (D 10300/10301) via Malmö, Norrköping, Linköping
+- Station codes use names for German cities (`Berlin`, `Hamburg`) and numeric IDs for Swedish (`740000001`)
+- Cloudflare-protected (realistic User-Agent required)
+
+### RDC EuroNight (`rdc-euronight-api.yaml`)
+Booking API for [tickets.rdc-deutschland.de](https://tickets.rdc-deutschland.de), including:
+- GraphQL endpoint (no auth, introspection disabled)
+- EN 344/345: Berlin Lichtenberg / Hamburg ↔ Stockholm Central (operated by BTE/SJ)
+- 4 accommodation types: Sitz, Liege (6-berth couchette), Bett (3-berth), Bett 1.Klasse (1–2 berth)
+- Single-place vs. private compartment booking (IsCabinBooking flag)
+- 3 price categories: Normal, Spar, Interrail
+- Batch pricing queries (multiple entity types in one request)
+- Traffic days: EN 344 Mo+Mi+Fr (Mi only from Hamburg), EN 345 Di+Do+Sa (Di only to Hamburg)
+- 14 stations across Germany and Sweden
+
 ## Usage
 
 If you're using Google Chrome, it will block all requests from SwaggerUI by default. To circumvent this, you can create a new shortcut to Google Chrome and append the following parameters: `--disable-web-security -user-data-dir=~` (note: single dash in front of `user-data-dir`). The directory for `user-data-dir` is not important, but it needs to exist on the local file system.
