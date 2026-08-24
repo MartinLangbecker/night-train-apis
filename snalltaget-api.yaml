@@ -17,7 +17,7 @@ info:
     | 304/305 | STNIGHT | Malmö ↔ Austria (via Hamburg) | winter + summer, Fr |
     | 24/25 | STNIGHT | Malmö ↔ Åre (summer) | Aug–Sep, ~2x/wk |
     | 3900–3905 | STNIGHT | Malmö ↔ Storlien/Åre/Vemdalen | winter, variable |
-    | 13904/13905 | STNIGHT | Malmö ↔ Vemdalen (Liegewagen-split) | winter Fr/Sa |
+    | 13904/13905 | STNIGHT | Malmö ↔ Vemdalen (couchette split) | winter Fr/Sa |
     | 3908/3909 | STTRAIN | Malmö ↔ Mora (+bus Sälen) | winter, Saturdays |
 
     Multiple trains share the same physical consist but are split in the booking system

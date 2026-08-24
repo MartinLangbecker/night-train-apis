@@ -51,14 +51,14 @@ Anonymous Bearer token — no account needed:
 | D 10300/10301 | STNIGHT | Berlin/Hamburg ↔ Stockholm (direct) | ~Apr–Dec, Mo–Fr+So |
 | D 300/301 | STNIGHT | Berlin/Hamburg ↔ Malmö (night section) | same as D 10300 |
 | 304/305 | STNIGHT | Malmö ↔ Copenhagen ↔ Hamburg ↔ Austria | Winter (Dec–Mar), Summer (Jul), Fr |
-| 24/25 | STNIGHT | Malmö ↔ Åre (Sommer-Nachtzug) | Aug–Sep, ~2x/Woche |
-| 3900/3901 | STNIGHT | Malmö ↔ Storlien (via Östküste) | Winter, variable Tage |
-| 3902/3903 | STNIGHT | Malmö ↔ Storlien (via Westküste) | Winter, variable Tage |
-| 3904/3905 | STNIGHT | Malmö ↔ Åre/Duved (Sitzwagen-Sektion) | Winter Fr/Sa |
-| 13904/13905 | STNIGHT | Malmö ↔ Vemdalen-Röjan (Liegewagen-Sektion) | Winter Fr/Sa (Hin+Rück-Pflicht) |
+| 24/25 | STNIGHT | Malmö ↔ Åre (summer night train) | Aug–Sep, ~2x/Woche |
+| 3900/3901 | STNIGHT | Malmö ↔ Storlien (via east coast) | Winter, variable days |
+| 3902/3903 | STNIGHT | Malmö ↔ Storlien (via west coast) | Winter, variable days |
+| 3904/3905 | STNIGHT | Malmö ↔ Åre/Duved (seated section) | Winter Fr/Sa |
+| 13904/13905 | STNIGHT | Malmö ↔ Vemdalen-Röjan (couchette section) | Winter Fr/Sa (Hin+Rück-Pflicht) |
 | 3908/3909 | STTRAIN | Malmö ↔ Stockholm ↔ Mora (+bus Sälen) | Winter (Dec–Apr), Sa |
 
-### D 300/10300 — Nachtzug Berlin ↔ Stockholm
+### D 300/10300 — Night train Berlin ↔ Stockholm
 
 Same physical train, split in the system at Malmö:
 - **D 300**: Berlin/Hamburg → Malmö (night section, Wg 213–215 end here)
@@ -66,7 +66,7 @@ Same physical train, split in the system at Malmö:
 
 Stops: Berlin Hbf → (Dresden) → Hamburg Hbf → Malmö C → (Stockholm C)
 
-### D 30/31 — Tageszug Malmö ↔ Oslo
+### D 30/31 — Day train Malmö ↔ Oslo
 
 | Station | Dep (→Oslo) | Dep (→Malmö) | EVA |
 |---------|-------------|--------------|-----|
@@ -85,7 +85,7 @@ Stops: Berlin Hbf → (Dresden) → Hamburg Hbf → Malmö C → (Stockholm C)
 Norwegian stops (Sarpsborg, Fredrikstad) bookable as destination only, not as boarding point.
 Products: Sitz (299–399 SEK), Private Compartment Seats (1.316–2.256 SEK).
 
-### 24/25 — Sommer-Nachtzug Malmö ↔ Åre/Storlien
+### 24/25 — Summer night train Malmö ↔ Åre/Storlien
 
 | Direction | Train | Dep | Arr |
 |-----------|-------|-----|-----|
@@ -105,9 +105,9 @@ Products: **All** — Sitz (499 SEK), NTB (874 SEK), Private Comp (3.499 SEK), F
 
 Two routing variants, variable operating days (matched to changeover days):
 
-**Via Östküste (3900/3901):** Malmö → Lund → Hässleholm → Alvesta → Nässjö → Linköping → Norrköping → Stockholm → Uppsala → Östersund → Undersåker → Åre → Duved → Enafors → Storlien
+**Via east coast (3900/3901):** Malmö → Lund → Hässleholm → Alvesta → Nässjö → Linköping → Norrköping → Stockholm → Uppsala → Östersund → Undersåker → Åre → Duved → Enafors → Storlien
 
-**Via Westküste (3902/3903):** Malmö → Lund → Helsingborg → Halmstad → Göteborg-Mölndal → Stockholm → Uppsala → Östersund → Undersåker → Åre → Duved → Enafors → Storlien
+**Via west coast (3902/3903):** Malmö → Lund → Helsingborg → Halmstad → Göteborg-Mölndal → Stockholm → Uppsala → Östersund → Undersåker → Åre → Duved → Enafors → Storlien
 
 | Train | Route | Dep | Arr | Days |
 |-------|-------|-----|-----|------|
@@ -122,14 +122,14 @@ Transfers available from Östersund to Vemdalen/Funäsfjällen ski areas on sele
 
 ### 3904/13904 + 3905/13905 — Vemdalen Ski Trains (Winter Fr/Sa)
 
-Same physical train departing Malmö 15:25 (Fridays), via Westküste (Helsingborg, Halmstad, Göteborg-Mölndal), Stockholm (22:55), Uppsala (23:35). Train splits after Östersund into two sections:
+Same physical train departing Malmö 15:25 (Fridays), via west coast (Helsingborg, Halmstad, Göteborg-Mölndal), Stockholm (22:55), Uppsala (23:35). Train splits after Östersund into two sections:
 
 | Train | Section | Destinations | Products |
 |-------|---------|-------------|----------|
-| 3904 | Sitzwagen | Östersund (06:05) → Undersåker → Åre (07:35) → Duved (07:55) | Sitz only (699+) |
-| 13904 | Liegewagen | → Vemdalen-Röjan (08:10) | NTB only (1.249+) |
-| 3905 | Sitzwagen | Duved → Malmö (return) | Sitz only |
-| 13905 | Liegewagen | Vemdalen-Röjan (16:00) → Malmö (08:45+1) | NTB only (999+) |
+| 3904 | Seated | Östersund (06:05) → Undersåker → Åre (07:35) → Duved (07:55) | Sitz only (699+) |
+| 13904 | Couchette | → Vemdalen-Röjan (08:10) | NTB only (1.249+) |
+| 3905 | Seated | Duved → Malmö (return) | Sitz only |
+| 13905 | Couchette | Vemdalen-Röjan (16:00) → Malmö (08:45+1) | NTB only (999+) |
 
 Split logic: 13904 is a separate train number in the system (no Östersund as bookable stop),
 but physically coupled with 3904 until the junction towards Sveg/Vemdalen.
@@ -138,7 +138,7 @@ Both depart Stockholm 22:55, Uppsala 23:35.
 **Booking restriction:** NTB only available as return trip (Fri out + Sat back).
 Season: Fridays 18.12.2026–12.02.2027 and 12.03–02.04.2027.
 
-### 306/307 — Tageszug Stockholm ↔ Hamburg
+### 306/307 — Day train Stockholm ↔ Hamburg
 
 | Station | Dep (→Hamburg) |
 |---------|----------------|
@@ -159,7 +159,7 @@ Season: Fridays 18.12.2026–12.02.2027 and 12.03–02.04.2027.
 | Neumünster | — |
 | Hamburg Hbf | — |
 
-### 304/305 — Nachtzug Malmö ↔ Österreich
+### 304/305 — Night train Malmö ↔ Austria
 
 | Direction | Train | Dep | Arr | Day |
 |-----------|-------|-----|-----|-----|
@@ -236,7 +236,7 @@ Oslo page explicitly lists all three options for the Berlin→Malmö leg.
 | NTPCSF/FF | Private Compartment (night) | Night trains |
 | NTPCCNF/SF/FF | Private Compartment Comfort | Rare (Austria?) |
 | **NTBNF/SF/FF** | **Berth shared** | **D 300, 13904/13905, Zug 24/25** |
-| FCSNF/SF/FF | First Class Seat | 306 + Zug 24/25 (Sommer-Nachtzug) |
+| FCSNF/SF/FF | First Class Seat | 306 + train 24/25 (summer night) |
 | FCSCNF/SF/FF | First Class Seat in Compartment | 306 |
 | FCPCNF/SF/FF | First Class Private Compartment | 306 + Zug 24/25 |
 | NTPCE | Extra Passenger Private Comp | Add-on |
@@ -290,12 +290,12 @@ Also returns `travelInfo[]` with current construction/diversion advisories or bo
 ## Wagenmaterial D 300/10300 (Vagonweb, confirmed 2026)
 
 - ELOC Vectron 193
-- Wg 213: Bmpz (Sitzwagen, 74 Pl.) — only to Malmö
-- Wg 214: Bvcmz 248 (Liegewagen, 40–60 Pl.) — only to Malmö
-- Wg 215: Bvcmz 248 (Liegewagen, 40–60 Pl.) — only to Malmö
-- Wg 216: Bmpz (Sitzwagen, 74 Pl.) — through to Stockholm
-- Wg 217: Bvcmz 248 (Liegewagen, 40–60 Pl.) — through to Stockholm
-- Wg 218: Bvcmz 248 (Liegewagen, 40–60 Pl.) — through to Stockholm
+- Wg 213: Bmpz (seated coach, 74 Pl.) — only to Malmö
+- Wg 214: Bvcmz 248 (couchette, 40–60 Pl.) — only to Malmö
+- Wg 215: Bvcmz 248 (couchette, 40–60 Pl.) — only to Malmö
+- Wg 216: Bmpz (seated coach, 74 Pl.) — through to Stockholm
+- Wg 217: Bvcmz 248 (couchette, 40–60 Pl.) — through to Stockholm
+- Wg 218: Bvcmz 248 (couchette, 40–60 Pl.) — through to Stockholm
 
 ## Passenger Types
 
