@@ -23,9 +23,13 @@ Anonymous Bearer token — no account needed:
 |----------|--------|---------|
 | `/orientation/calendar` | POST | Price calendar (cheapest per day) |
 | `/orientation/searchjourney` | POST | Full journey search with routes/bundles |
-| `/orientation/searchservices` | POST | Service details for identifiers |
+| `/orientation/searchservices` | POST | Service details, amenities, travel advisories |
+| `/tablebooking/availabletimes` | POST | Available Krogen restaurant time slots |
+| `/tablebooking/booktemporary` | POST | Create temporary table reservation |
+| `/tablebooking/temporary/{id}` | DELETE | Cancel temporary table reservation |
 | `/interrail/validate` | POST | Validate Interrail pass numbers |
 | `/booking` | POST | Create a booking (returns PNR) |
+| `/booking/{pnr}/cancel` | POST | Cancel a booking (returns 204) |
 | `/auth/refreshtoken` | POST | Refresh Bearer token |
 
 ## Station Codes
@@ -44,6 +48,7 @@ Anonymous Bearer token — no account needed:
 |-------|------|-------|-------|
 | D 10300 | STNIGHT | Berlin/Hamburg → Stockholm | Direct (1 leg) |
 | D 300 | STNIGHT | Berlin/Hamburg → Malmö | Night section only |
+| D 30 | STTRAIN | Malmö → Oslo | Day train (since Jun 2026) |
 | 3940 | STTRAIN | Malmö → Stockholm | Day continuation |
 | 306 | STTRAIN | Hamburg → Stockholm | Day train |
 | D 10301 | STNIGHT | Stockholm → Berlin/Hamburg | Return direction |
@@ -123,4 +128,26 @@ Total: 4 Liegewagen + 2 Sitzwagen, ~240 Liegeplätze + 148 Sitzplätze.
 
 ## Booking Endpoint
 
-Uses EVA numbers (not search strings). Tariff codes: `NMR_NTBRF` (shared berth).
+Uses EVA numbers (not search strings). Tariff codes: `NMR_NTBRF` (shared berth),
+`SPRBNT` (seat rebookable night train), `SPPCRB_1` (private compartment seat rebookable).
+
+## Option Items (Booking Add-ons)
+
+| Code | Name | Price | Available on |
+|------|------|-------|-------------|
+| TAB | Take-Away Breakfast | 99 SEK | Night trains (D 300, D 10300) |
+| VTAB | Vegan Take-Away Breakfast | 99 SEK | Night trains (D 300, D 10300) |
+| BIK1 | Breakfast in Krogen Day 1 | 99 SEK | Day trains with KROG (D 30, 3940) |
+| VBIK1 | Vegan Breakfast in Krogen Day 1 | 99 SEK | Day trains with KROG (D 30, 3940) |
+
+Krogen breakfast requires table reservation via `/tablebooking/availabletimes` + `/tablebooking/booktemporary`.
+
+## Service Properties
+
+| Code | Description | Trains |
+|------|-------------|--------|
+| KIOSK | Kiosk (snack sales) | D 300, D 10300 (night) |
+| KROG | Speisewagen (restaurant car) | D 30, 3940, 306 (day) |
+
+Queried via `/orientation/searchservices`. Also returns `travelInfo` with current
+travel advisories (construction diversions, temporary halt changes).

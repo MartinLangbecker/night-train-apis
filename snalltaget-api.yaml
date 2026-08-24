@@ -11,6 +11,7 @@ info:
     |--------|------|-------|
     | D 10300 | STNIGHT | Berlin/Hamburg → Stockholm (direct, 1 leg) |
     | D 300 | STNIGHT | Berlin/Hamburg → Malmö (night section only) |
+    | D 30 | STTRAIN | Malmö → Oslo (day train) |
     | 3940 | STTRAIN | Malmö → Stockholm (day continuation) |
     | 306 | STTRAIN | Hamburg → Stockholm (day train) |
 
@@ -31,6 +32,7 @@ info:
     | Dresden | `Dresden` | — |
     | Malmö | — | 740000003 |
     | Stockholm | `740000001` | 740000001 |
+    | Oslo | `760000100` | 760000100 |
 
     Search uses name strings; booking uses EVA numbers.
 
@@ -39,7 +41,7 @@ info:
     - `outbound`: origin is Berlin, Hamburg, or Dresden
     - `inbound`: origin is Stockholm
 
-    Prices in SEK. 8 endpoints total.
+    Prices in SEK. 12 endpoints total.
 servers:
   - url: https://apiv2.snalltaget.se
     description: API server
@@ -450,7 +452,10 @@ paths:
         Creates a booking for one or more segments. Uses EVA numbers for stations
         (not the search string identifiers). Returns a booking number (PNR).
 
-        Tariff codes observed: `NMR_NTBRF` (shared berth rebookable/flex).
+        Tariff codes: `NMR_NTBRF` (shared berth), `SPRBNT` (seat rebookable night),
+        `SPPCRB_1` (private compartment seat rebookable).
+
+        Option items: `TAB` (take-away breakfast 99 SEK), `VTAB` (vegan TAB 99 SEK).
       requestBody:
         required: true
         content:
@@ -499,8 +504,22 @@ paths:
                               example: NMR_NTBRF
                       optionItems:
                         type: array
+                        description: "Add-on items (breakfast, etc.)"
                         items:
                           type: object
+                          properties:
+                            passengerId:
+                              type: string
+                              example: passenger_1
+                            tariffCode:
+                              type: string
+                              description: "TAB=Take-Away Breakfast, VTAB=Vegan TAB, BIK1=Breakfast in Krogen Day 1, VBIK1=Vegan BIK1"
+                              enum:
+                                - TAB
+                                - VTAB
+                                - BIK1
+                                - VBIK1
+                              example: TAB
       responses:
         '200':
           description: Booking created
@@ -525,6 +544,178 @@ paths:
                       code:
                         type: string
                         example: HP_E
+
+  /tablebooking/availabletimes:
+    post:
+      tags:
+        - Table Booking
+      summary: Get Available Krogen Times
+      operationId: getAvailableTimes
+      description: |-
+        Returns available time slots for a Krogen (restaurant) reservation on a specific service.
+
+        Product codes: `BIK1` (Breakfast in Krogen Day 1), `VBIK1` (vegan variant).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - departureTime
+                - arrivalTime
+                - serviceName
+                - slotStartTime
+                - slotEndTime
+                - slotOffsetDays
+                - persons
+                - productCode
+              properties:
+                departureTime:
+                  type: string
+                  format: date-time
+                  example: '2026-08-26T06:38:00'
+                arrivalTime:
+                  type: string
+                  format: date-time
+                  example: '2026-08-26T13:16:00'
+                serviceName:
+                  type: string
+                  description: Train number
+                  example: '30'
+                slotStartTime:
+                  type: string
+                  description: Earliest slot time (HH:MM)
+                  example: '05:30'
+                slotEndTime:
+                  type: string
+                  description: Latest slot time (HH:MM)
+                  example: '10:45'
+                slotOffsetDays:
+                  type: integer
+                  description: Day offset from departure (0 = same day)
+                  example: 0
+                persons:
+                  type: integer
+                  example: 1
+                productCode:
+                  type: string
+                  enum:
+                    - BIK1
+                    - VBIK1
+                  example: BIK1
+      responses:
+        '200':
+          description: Available time slots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: string
+                      description: "Time slot (HH:MM)"
+                    example: ["09:15", "09:30", "09:45", "10:00"]
+                  date:
+                    type: string
+                    format: date
+                    example: '2026-08-26'
+
+  /tablebooking/booktemporary:
+    post:
+      tags:
+        - Table Booking
+      summary: Create Temporary Reservation
+      operationId: bookTemporary
+      description: |-
+        Creates a temporary table reservation. The reservation is confirmed when the
+        booking is finalized via `/booking`. Can be cancelled via DELETE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - date
+                - time
+                - serviceName
+                - persons
+              properties:
+                date:
+                  type: string
+                  format: date
+                  example: '2026-08-26'
+                time:
+                  type: string
+                  description: "Selected time slot (HH:MM)"
+                  example: '09:45'
+                serviceName:
+                  type: string
+                  description: Train number
+                  example: '30'
+                persons:
+                  type: integer
+                  example: 1
+      responses:
+        '200':
+          description: Temporary reservation created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bookingId:
+                    type: integer
+                    description: Temporary reservation ID
+                    example: 64440603
+
+  /tablebooking/temporary/{bookingId}:
+    delete:
+      tags:
+        - Table Booking
+      summary: Cancel Temporary Reservation
+      operationId: cancelTemporaryBooking
+      description: |-
+        Cancels a temporary Krogen table reservation.
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Temporary reservation ID from booktemporary response
+          example: 64440603
+      responses:
+        '204':
+          description: Reservation cancelled
+
+  /booking/{pnr}/cancel:
+    post:
+      tags:
+        - Booking
+      summary: Cancel Booking
+      operationId: cancelBooking
+      description: |-
+        Cancels a booking by PNR. Returns 204 with empty body on success.
+      parameters:
+        - name: pnr
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Booking PNR (6 alphanumeric chars)
+          example: TYS5NQ
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '204':
+          description: Booking cancelled
 
 components:
   securitySchemes:
@@ -644,16 +835,17 @@ components:
       properties:
         name:
           type: string
-          example: Snälltåget 10300
+          description: Train number
+          example: '300'
         serviceIdentifier:
           type: string
-          example: '0:RDA|10300|STNIGHT|20260915|1830|0930'
+          example: '0:RDA|300|STNIGHT|2026-08-25|2026-08-25T19:14|2026-08-26T06:30'
         serviceType:
           type: object
           properties:
             name:
               type: string
-              example: Night Train
+              example: Snälltåget
             code:
               type: string
               enum:
@@ -662,19 +854,31 @@ components:
               example: STNIGHT
         serviceProperties:
           type: array
+          description: "On-board amenities: KIOSK (night trains), KROG (day trains with restaurant)"
           items:
             type: object
+            properties:
+              code:
+                type: string
+                enum:
+                  - KIOSK
+                  - KROG
+                example: KROG
+              description:
+                type: string
+                example: Speisewagen
         travelInfo:
           type: array
+          description: Current travel advisories (construction, diversions)
           items:
             type: object
             properties:
               title:
                 type: string
-                example: Boarding Information
+                example: Aufgrund von Bauarbeiten halten die Züge nicht am Hamburg Hbf.
               content:
                 type: string
-                example: Please arrive 30 minutes before departure.
+                example: Aufgrund von Bauarbeiten halten die Züge nicht am Hamburg Hbf.
 
     VoucherRequest:
       type: object
