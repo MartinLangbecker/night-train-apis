@@ -154,13 +154,26 @@ Season: Fridays 18.12.2026–12.02.2027 and 12.03–02.04.2027.
 
 ### 304/305 — Nachtzug Malmö ↔ Österreich
 
-Stops: Stockholm C* → Malmö C → Høje Taastrup → Odense → Kolding → Hamburg Hbf → St. Johann im Pongau → Zell am See
+| Direction | Train | Dep | Arr | Day |
+|-----------|-------|-----|-----|-----|
+| → Austria | 305 | Malmö C 14:40 | Innsbruck Hbf 13:02+1 | Fridays |
+| → Sweden | 304 | Innsbruck Hbf 19:00 | Malmö C 16:00+1 | Saturdays |
+| → Austria (Stockholm) | 305 | Stockholm C 09:00 | Zell am See 10:52+1 | 26.02.2027 only |
+| → Sweden (Stockholm) | 304 | Zell am See 21:06 | Stockholm C 22:15+1 | 06.03.2027 only |
 
-*Stockholm via connecting day train (Alvesta, Nässjö, Linköping, Norrköping, Södertälje).
+Stops (from website): Malmö → København Syd → Odense → Kolding → Hamburg Hbf → St. Johann im Pongau → Zell am See → Innsbruck.
+Connecting trains from Stockholm, Södertälje, Norrköping, Linköping, Nässjö, Alvesta.
+Bus connections from Zell am See to: Obertauern, Wagrain, Bad Gastein, Saalbach, Zell am Ziller, Mayrhofen, Sölden, Obergurgl, Ischgl, St. Anton.
 
-Bus connections from Zell am See to: Obertauern, Wagrain, Bad Gastein, Saalbach-Hinterglemm, Zell am Ziller, Mayrhofen, Sölden, Obergurgl, Ischgl, St. Anton.
+Products: Sitz (1.249+ SEK), NTB (1.999+ SEK), Private Compartment (7.999+ SEK).
+Stockholm prices: Sitz (2.500+), NTB (3.125+), Private (12.499+).
 
-Season 2026/27: Fri departures 18.12.2026–14.03.2027 (winter), Jul 2026 (summer).
+**Booking restriction:** Hin+Rück-Pflicht (API requires `oppositedate` parameter).
+Exceptions: 19.12.2026 (return only) and 12.03.2027 (outbound only) = one-way available.
+
+Service properties: KROG (restaurant). `requireBirthDateAndCountry: true` (passport control).
+
+Season: Winter 18.12.2026–14.03.2027, Summer Jul 2026 (3, 10, 17, 24, 31 Jul).
 
 ## Station Codes
 
@@ -228,16 +241,20 @@ Uses EVA numbers (not search strings).
 Tariff codes:
 - `NMR_NTBRF` — Shared berth (rebookable/flex)
 - `SPRBNT` — Seat rebookable night train
+- `SPRF` — Seat refundable (fully flexible, Austria/premium)
 - `SPPCRB_1` — Private compartment seat rebookable
+
+Austria bookings require `requireBirthDateAndCountry: true` (passport data mandatory).
 
 ## Option Items (Booking Add-ons)
 
 | Code | Name | Price | Where |
 |------|------|-------|-------|
 | TAB | Take-Away Breakfast | 99 SEK | Night trains (KIOSK segment) |
-| VTAB | Vegan Take-Away Breakfast | 99 SEK | Night trains (KIOSK segment) |
+| VTAB | Vegan Take-Away Breakfast | 99 SEK | Night trains (KIOSK/KROG segment) |
 | BIK1 | Breakfast in Krogen Day 1 | 99 SEK | Day trains with KROG |
 | VBIK1 | Vegan Breakfast in Krogen Day 1 | 99 SEK | Day trains with KROG |
+| SCI30 | Skier einchecken (max 10 kg) | 349 SEK/leg | Austria + Ski trains (BAG/SKI) |
 
 Krogen breakfast requires table reservation: `/tablebooking/availabletimes` → `/tablebooking/booktemporary`.
 

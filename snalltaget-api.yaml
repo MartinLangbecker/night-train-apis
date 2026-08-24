@@ -522,12 +522,13 @@ paths:
                               example: passenger_1
                             tariffCode:
                               type: string
-                              description: "TAB=Take-Away Breakfast, VTAB=Vegan TAB, BIK1=Breakfast in Krogen Day 1, VBIK1=Vegan BIK1"
+                              description: "TAB=Take-Away Breakfast, VTAB=Vegan TAB, BIK1=Breakfast in Krogen, VBIK1=Vegan BIK1, SCI30=Ski Check-In"
                               enum:
                                 - TAB
                                 - VTAB
                                 - BIK1
                                 - VBIK1
+                                - SCI30
                               example: TAB
       responses:
         '200':
