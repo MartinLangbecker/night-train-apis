@@ -20,7 +20,8 @@ info:
     | 13904/13905 | STNIGHT | Malmö ↔ Vemdalen (Liegewagen-split) | winter Fr/Sa |
     | 3908/3909 | STTRAIN | Malmö ↔ Mora (+bus Sälen) | winter, Saturdays |
 
-    D 300 + 3940 = same physical train as D 10300, split at Malmö.
+    Multiple trains share the same physical consist but are split in the booking system
+    (e.g. D 300 + 3940 = D 10300, split at Malmö; 3904 + 13904, split at Östersund).
 
     ## Authentication
 
