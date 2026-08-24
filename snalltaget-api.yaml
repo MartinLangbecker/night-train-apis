@@ -20,8 +20,7 @@ info:
     | 13904/13905 | STNIGHT | Malmö ↔ Vemdalen (Liegewagen-split) | winter Fr/Sa |
     | 3908/3909 | STTRAIN | Malmö ↔ Mora (+bus Sälen) | winter, Saturdays |
 
-    D 300 + 3940 = same physical train as D 10300, split at Malmö. Shared berths (NTB*)
-    are only offered on the D 300 transfer route, never on D 10300 direct.
+    D 300 + 3940 = same physical train as D 10300, split at Malmö.
 
     ## Authentication
 
@@ -44,12 +43,6 @@ info:
     | Zell am See | — | 810000320 |
 
     Search uses name strings or EVA numbers; booking uses EVA numbers.
-
-    ## Direction
-
-    - `outbound`: origin is Berlin, Hamburg, Dresden, or Malmö (depending on route)
-    - `inbound`: origin is Stockholm or Oslo
-
     Prices in SEK. 12 endpoints total.
 servers:
   - url: https://apiv2.snalltaget.se
