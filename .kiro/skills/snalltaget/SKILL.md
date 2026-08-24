@@ -168,8 +168,9 @@ Bus connections from Zell am See to: Obertauern, Wagrain, Bad Gastein, Saalbach,
 Products: Sitz (1.249+ SEK), NTB (1.999+ SEK), Private Compartment (7.999+ SEK).
 Stockholm prices: Sitz (2.500+), NTB (3.125+), Private (12.499+).
 
-**Booking restriction:** Hin+Rück-Pflicht (API requires `oppositedate` parameter).
-Exceptions: 19.12.2026 (return only) and 12.03.2027 (outbound only) = one-way available.
+**Booking restriction:** NTB and Private Compartment require `oppositedate` (return booking).
+Seat is always bookable one-way on all dates.
+Exceptions where NTB/Private are one-way: 19.12.2026 (return from Austria), 12.03.2027 (outbound to Austria).
 
 Service properties: KROG (restaurant). `requireBirthDateAndCountry: true` (passport control).
 
