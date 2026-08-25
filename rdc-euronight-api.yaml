@@ -271,6 +271,8 @@ paths:
         - `IsCabinBooking: false` → single place (Einzelplatz / Damen-Abteil)
         - `IsCabinBooking: true` → private compartment (Privatabteil)
         - Empty `PriceCategories[]` in response = sold out for that entity/option combination
+
+        **Capacity probing:** Increase `AmountAdults` until `PriceCategories[]` becomes empty — the last successful value equals remaining inventory (seats for Single, compartments for Cabin). Price tier boundaries are also visible: `SinglePrice` jumps when a tier's contingent is exceeded (all requested places then price at the next tier).
       requestBody:
         required: true
         content:

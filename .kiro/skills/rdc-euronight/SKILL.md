@@ -14,9 +14,9 @@ Content-Type: application/json
 | Header | Value |
 |--------|-------|
 | `NEX-Language` | `de` (or `en`, `sv`) |
-| `Origin` | `https://tickets.rdc-deutschland.de` |
-| `Referer` | `https://tickets.rdc-deutschland.de/` |
-| `x-booking-url` | `https://tickets.rdc-deutschland.de` |
+| `Origin` | `https://www.nachtexpress.de` |
+| `Referer` | `https://www.nachtexpress.de/` |
+| `x-booking-url` | `https://www.nachtexpress.de/de/buchen/` |
 
 No auth needed. Introspection disabled — queries must be known.
 
@@ -53,12 +53,12 @@ No auth needed. Introspection disabled — queries must be known.
 
 ## Entity Types (Accommodation)
 
-| Type | HashId | Description |
-|------|--------|-------------|
-| Sitz | `8a21db97-3b0a-483a-9c5a-459fc4e6a590` | Seat (2nd class) |
-| Liege | `a1c7e3d4-5f8b-4e2a-b6d9-8c3f1a2e7b54` | Couchette (6-berth) |
-| Bett | `c4e8f2a1-7d3b-4c6e-9a5f-2b8d1e4c7a39` | Berth (3-berth compartment) |
-| Bett 1.Klasse | `f7b3d9e2-1a4c-4d8f-b5e6-3c9a2f7d1e84` | Berth 1st class (1–2 berth) |
+| Type | HashID | Description | Compartment |
+|------|--------|-------------|-------------|
+| Sitz | `Z5RRRzb1J4` | Seat (2nd class, Bimz 264) | up to 6 pers (comp) or open |
+| Liege | `BKVpAEyGbm` | Couchette (6-berth, Bvcmz 248) | 6 berths, lockable |
+| Bett | `mkkJKnMnWm` | Sleeper 2nd (WLABmz AB32) | 2-berth, washbasin |
+| Bett 1.Klasse | `mdoeXD6Lj4` | Sleeper 1st (WLABmz Deluxe) | 3-berth, shower+WC |
 
 ## IsCabinBooking
 
@@ -132,19 +132,77 @@ WLABmz AB32 layout per car: 13 standard compartments (2-berth, washbasin) + 2 De
 
 Spar = 85% of Normal, Interrail = 80% of Normal.
 
+## Capacity Probing via AmountAdults
+
+The API reveals remaining capacity through `ReadPriceCategories`: if `AmountAdults` exceeds available inventory, the response returns an empty `PriceCategories[]`.
+
+### Semantics of AmountAdults
+
+| Booking type | AmountAdults means | Price field |
+|---|---|---|
+| Single (`IsCabinBooking: false`) | Number of individual berths/seats | `Price = SinglePrice × n` |
+| Cabin (`IsCabinBooking: true`) | Number of compartments | `Price = flat rate per cabin` (constant regardless of occupants) |
+
+### Tier Boundaries Visible in Multi-Person Requests
+
+When requesting multiple Single places, the price jumps to the next tier once the current tier's contingent is exceeded. The jump applies to **all** places in the request (not just the additional ones):
+
+```
+Liege Single, n=3: Price=450, SinglePrice=150  → 3×150 (all within Tier 2)
+Liege Single, n=4: Price=680, SinglePrice=170  → 4×170 (Tier 3 applies to all)
+Bett Single,  n=1: Price=250, SinglePrice=250  → 1×250 (Tier 2)
+Bett Single,  n=2: Price=600, SinglePrice=300  → 2×300 (Tier 3 applies to all)
+```
+
+This reveals tier boundaries: Liege has 3 places at Tier 2 (150€), then jumps. Bett has 1 place at Tier 2 (250€), then jumps. `SinglePrice` always equals `Price / AmountAdults`.
+
+### Observed Capacity (Berlin→Stockholm, first 3 connections, fresh season)
+
+| Type | Capacity | Unit | Notes |
+|------|----------|------|-------|
+| Sitz Single | 5 | seats | vs. 60 physical (Wg 31) |
+| Liege Single | 6 | berths | vs. 96+ physical |
+| Liege Cabin | 6 | compartments (×6 = 36 berths) | vs. 16+ physical compartments |
+| Bett Single | 2 | berths | vs. 78 physical |
+| Bett Cabin | 2 | compartments (×2 = 4 berths) | vs. 39+ physical compartments |
+| Bett 1.Kl | 3 | compartments (×3 = 9 berths) | vs. 6-8 physical Deluxe compartments |
+
+These are **sales contingents**, not physical capacity. RDC likely sells the remainder via SJ's system (the train is jointly operated BTE/SJ). Contingent sizes will shift as the season progresses.
+
+### Method
+
+Binary search via AmountAdults: double until empty, then bisect. ~8 requests per entity type to find exact boundary.
+
+```python
+def find_capacity(conn_hash, entity_hash, is_cabin):
+    low, high = 1, 1
+    while has_prices(conn_hash, entity_hash, is_cabin, high):
+        low = high
+        high *= 2
+    while low < high - 1:
+        mid = (low + high) // 2
+        if has_prices(conn_hash, entity_hash, is_cabin, mid):
+            low = mid
+        else:
+            high = mid
+    return low
+```
+
 ## Example: ReadTrainConnections
 
 ```json
 {
   "operationName": "ReadTrainConnections",
   "variables": {
-    "DepartureStationId": 68,
-    "ArrivalStationId": 57,
-    "Date": "2026-09-05"
+    "DepartureStationID": 68,
+    "ArrivalStationID": 57,
+    "VehiclesEnabled": false
   },
-  "query": "query ReadTrainConnections($DepartureStationId: Int!, $ArrivalStationId: Int!, $Date: String!) { readTrainConnections(departureStationId: $DepartureStationId, arrivalStationId: $ArrivalStationId, date: $Date) { TrainConnectionId DepartureDateTime ArrivalDateTime TrainNumber } }"
+  "query": "query ReadTrainConnections($DepartureStationID: Int!, $ArrivalStationID: Int!, $VehiclesEnabled: Boolean!) { readTrainConnections(DepartureStationID: $DepartureStationID, ArrivalStationID: $ArrivalStationID, VehiclesEnabled: $VehiclesEnabled) { HashID StartDate DepartureNextDay UnreliableTimeSchedule } }"
 }
 ```
+
+Response returns all bookable connections (no date filter — returns entire season).
 
 ## Example: ReadEntityTypes
 
@@ -152,10 +210,42 @@ Spar = 85% of Normal, Interrail = 80% of Normal.
 {
   "operationName": "ReadEntityTypes",
   "variables": {
-    "TrainConnectionId": 123,
-    "DepartureStationId": 68,
-    "ArrivalStationId": 57
+    "TrainConnectionHashID": "Z5ELrvXvnJ"
   },
-  "query": "query ReadEntityTypes($TrainConnectionId: Int!, $DepartureStationId: Int!, $ArrivalStationId: Int!) { readEntityTypes(trainConnectionId: $TrainConnectionId, departureStationId: $DepartureStationId, arrivalStationId: $ArrivalStationId) { EntityTypeId Name HashId IsCabinBooking BookingOptions { BookingOptionId Name } } }"
+  "query": "query ReadEntityTypes($TrainConnectionHashID: ID!) { readEntityTypes(TrainConnectionHashID: $TrainConnectionHashID) { ID Title Icon InfoPreview BookingOptions { Code Title } } }"
+}
+```
+
+## Example: ReadPriceCategories
+
+```json
+{
+  "operationName": "ReadPriceCategories",
+  "variables": {
+    "input": {
+      "ArrivalStationID": 57,
+      "ConsiderExpiryDate": true,
+      "DepartureStationID": 68,
+      "EntityRequests": [{
+        "AddOns": [],
+        "AmountAdults": 1,
+        "AmountBaby": 0,
+        "AmountChildren": 0,
+        "AmountSeniors": 0,
+        "AmountStudents": 0,
+        "CollectionTag": null,
+        "ExpectedPrice": null,
+        "IsCabinBooking": false,
+        "Passes": [],
+        "PriceCategory": null,
+        "RequestID": "uuid-v4",
+        "Type": "BKVpAEyGbm"
+      }],
+      "EntityTypeHashIDs": ["BKVpAEyGbm"],
+      "TrainConnectionHashID": "Z5ELrvXvnJ",
+      "Vehicles": []
+    }
+  },
+  "query": "query ReadPriceCategories($input: PriceCategoryInput!) { readPriceCategories(input: $input) { RequestID PriceCategories { ID Title SubTitle Price { Amount Currency } SinglePrice { Amount Currency } } } }"
 }
 ```
