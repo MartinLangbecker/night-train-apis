@@ -175,6 +175,19 @@ However, **price tiers within the cap reveal actual occupancy**. Example (Sitz):
 
 The tier at which prices start, and where they jump, indicates how many cheap places have been sold across ALL channels (including former SJ sales).
 
+### Tier Scan Interpretation
+
+Two possible outcomes per entity per date:
+
+1. **Tier jump within cap** → exact number of remaining places in current tier known
+   - Example: Liege `[150 150 150 150 170 170]` → 4 places left in Tier 2
+2. **No jump** → current tier has ≥cap places remaining (i.e. ≥5 for Sitz, ≥6 for Liege)
+   - Example: Liege `[120 120 120 120 120 120]` → Tier 1, at least 6 remain
+
+No multi-tier jumps observed within a single scan (max 1 boundary per entity per date). Tier sizes are ≥6 places.
+
+Over time, a date progresses: Tier 1 (no jump) → Tier 1 (jump visible, few remain) → Tier 2 (no jump) → Tier 2 (jump visible) → ... → Tier 4 → sold out.
+
 ### Per-Booking Rules
 
 - `AmountAdults + AmountChildren` count together toward the capacity limit
