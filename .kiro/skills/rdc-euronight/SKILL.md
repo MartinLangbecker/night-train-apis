@@ -49,7 +49,31 @@ No auth needed. Introspection disabled — queries must be known.
 | 63 | Mjölby |
 | 64 | Linköping |
 | 65 | Norrköping |
-| 66 | Södertälje |
+| 66 | Padborg |
+
+### Route Restrictions
+
+Not all station pairs are bookable:
+
+| Route | Bookable? | Notes |
+|-------|-----------|-------|
+| Berlin/Hamburg → Stockholm | ✓ | Main routes |
+| Berlin/Hamburg → Swedish intermediates | ✓ | Malmö, Linköping, Norrköping etc. |
+| Berlin/Hamburg → Padborg | ✓ | Shortest segment from Germany (Sitz 72€ vs 80€ to Stockholm) |
+| Padborg → Stockholm | ✓ | 43 connections |
+| Berlin → Hamburg | ✗ | Domestic Germany blocked |
+| Malmö → Stockholm | ✗ | Domestic Sweden blocked |
+| Malmö/Lund/Hässleholm/Alvesta/Nässjö → Linköping/Stockholm | ✗ | Short Swedish segments blocked |
+| Malmö–Nässjö → Norrköping | ✓ | Norrköping is the minimum Swedish destination from south |
+| Hamburg Hbf (69) as departure | ✗ | Only Hamburg Altona (5) works |
+
+66 of 156 station pairs are bookable (42%). General rule: cross-border segments work, domestic segments are blocked. Exception: Norrköping appears to be a boundary — bookable from southern Swedish stations, but Linköping/Stockholm are not.
+
+Prices are distance-independent for Liege/Bett (same price Berlin→Padborg as Berlin→Stockholm). Only Sitz has distance-based pricing (72€ to Padborg vs 80€ to Stockholm on same date).
+
+### Pricing: Route-Independent (zugweit)
+
+Tier prices are identical regardless of departure station (Berlin or Hamburg) on the same train. One contingent per train, not per routing.
 
 ## Entity Types (Accommodation)
 

@@ -13,10 +13,12 @@ info:
     |----|------|
     | 68 | Berlin Lichtenberg |
     | 67 | Berlin Gesundbrunnen |
-    | 5  | Hamburg Hbf |
+    | 5  | Hamburg Altona |
     | 57 | Stockholm Central |
 
-    Intermediate stops: 58 Norrköping, 59 Linköping, 60 Nässjö, 61 Alvesta, 62 Hässleholm, 64 Lund, 65 København, 66 Padborg, 70 Mölndals nedre.
+    Intermediate stops: 58 Malmö, 59 Lund, 60 Hässleholm, 61 Alvesta, 62 Nässjö, 63 Mjölby, 64 Linköping, 65 Norrköping, 66 Padborg, 69 Hamburg Hbf (arrival only), 70 Mölndals nedre.
+
+    Route restrictions: Berlin→Hamburg and Malmö→Stockholm are blocked (domestic segments). Shortest bookable: Hamburg→Padborg (Sitz 72€). Prices are zugweit (same tier regardless of boarding station).
 
     ## Entity Types
 
