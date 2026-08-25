@@ -104,12 +104,76 @@ Multiple `EntityRequests` can be sent in a single `ReadPriceCategories` call —
 ## Traffic Days
 
 ### EN 344 (Berlin/Hamburg → Stockholm)
-- **Mo + Fr**: from Berlin Lichtenberg
-- **Mi**: from Hamburg only (no Berlin departure)
+Season: 01.09.–12.12.2026
+
+| Day | From Berlin? | Route variant |
+|-----|---|---|
+| **Mo** | ✓ (18:39, 19:06 until 05.10) | Standard (east coast) |
+| **Mi** | ✗ (Hamburg only, 21:53) | Standard (east coast) |
+| **Fr** | ✓ (18:39, 19:06 until 05.10) | Standard (east coast) |
+| **Fr special** (11.9, 23.10, 20.11) | ✓ (18:39) | Via **Mölndals nedre (Göteborg)**, skips Hässleholm–Norrköping |
+
+Fr 06.11 does not operate. Mi 23.09 departs Berlin at 19:06.
+
+Standard timetable (east coast):
+```
+Berlin Lichtenberg  dep 18:39 (19:06 until 05.10)
+Hamburg Hbf         dep 21:53
+Padborg             dep 00:29
+København Airport   arr 03:23
+Lund                arr 04:35
+Hässleholm          arr 05:13
+Alvesta             arr 06:01
+Nässjö              arr 06:45
+Linköping           arr 07:48
+Norrköping          arr 08:16
+Stockholm Central   arr 09:45
+```
+
+Göteborg variant (special Fridays):
+```
+...same until Lund 04:35...
+Mölndals nedre (Gbg) arr 07:30
+Stockholm Central    arr 11:10
+```
 
 ### EN 345 (Stockholm → Berlin/Hamburg)
-- **Do + Sa**: to Berlin Lichtenberg
-- **Di**: to Hamburg only (no Berlin arrival)
+Season: 01.09.–12.12.2026
+
+| Day | To Berlin? | Route variant |
+|-----|---|---|
+| **Di** | ✗ (Hamburg only) | Standard (east coast) |
+| **Do** | ✓ (Berlin Gesundbrunnen) | Standard (east coast) |
+| **Sa** | ✓ (Berlin Gesundbrunnen) | Standard (east coast) |
+| **Sa special** (12.9, 26.9, 10.10, 24.10, 21.11, 5.12) | ✓ | Via **Mölndals nedre (Göteborg)**, skips Norrköping–Hässleholm |
+
+Sa 07.11 does not operate. Di 22.09 runs to Berlin Gesundbrunnen (exception).
+
+Standard timetable (east coast):
+```
+Stockholm Central   dep 17:29
+Norrköping          dep 18:59
+Linköping           dep 19:29
+Nässjö              dep 20:29
+Alvesta             dep 21:10
+Hässleholm          dep 21:57
+Lund                dep 22:31
+København Airport   dep 23:52
+Padborg             arr 03:12
+Hamburg Hbf         arr 05:53
+Berlin Gesundbrunnen arr 08:56
+```
+
+Göteborg variant (special Saturdays):
+```
+Stockholm Central   dep 17:10
+Mölndals nedre (Gbg) dep 22:10
+Lund                dep 00:43
+København Airport   dep 01:37
+Padborg             arr 05:08
+Hamburg Hbf         arr 08:10
+Berlin Gesundbrunnen arr 11:10
+```
 
 ## Train Formation (Vagonweb, 02.09.–12.12.2026)
 
