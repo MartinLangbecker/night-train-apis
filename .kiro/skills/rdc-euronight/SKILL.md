@@ -262,8 +262,8 @@ Response returns all bookable connections (no date filter — returns entire sea
 
 1. **5 seats vs 60 physical** — RDC sells only 5 Sitz online (8% of Wg 31 capacity). Is the rest sold via other channels, or held back entirely? Same pattern for all types (Liege 6/96, Bett 2/78).
 
-2. **SJ involvement post-September** — nachtexpress.de states "Fahrten bis Ende August buchen Sie weiterhin bei der SJ". After September, does RDC become sole seller? Will contingents increase?
+2. **SJ involvement post-September** — SJ sells EN 344 until 31.08.2026 (confirmed via sj.se, `producer: "SJ_ONLY"`, `serviceType: "SJEURO"`). From 01.09 no results on sj.se → SJ drops out entirely. nachtexpress.de becomes sole online channel. Will contingents increase at that point?
 
-3. **Other sales channels** — Are tickets available via SJ webshop, Reisebüros, or bahn.de after September? Or is nachtexpress.de the only point of sale?
+3. **Other sales channels** — Are tickets available via Reisebüros or bahn.de after September? Or is nachtexpress.de the only point of sale?
 
 4. **Contingent dynamics** — Do the observed limits (5/6/2/3) change over the season? Need time series data post-September to confirm.
