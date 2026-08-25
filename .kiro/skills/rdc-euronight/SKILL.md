@@ -38,18 +38,17 @@ No auth needed. Introspection disabled — queries must be known.
 |----|---------|
 | 68 | Berlin Lichtenberg |
 | 67 | Berlin Gesundbrunnen |
-| 5 | Hamburg Altona |
-| 69 | Hamburg Hbf |
+| 5 | Hamburg Hbf |
 | 57 | Stockholm Central |
-| 58 | Malmö Central |
-| 59 | Lund |
-| 60 | Hässleholm |
+| 58 | Norrköping Central |
+| 59 | Linköping Central |
+| 60 | Nässjö Central |
 | 61 | Alvesta |
-| 62 | Nässjö |
-| 63 | Mjölby |
-| 64 | Linköping |
-| 65 | Norrköping |
+| 62 | Hässleholm |
+| 64 | Lund C |
+| 65 | Københavns Lufthavn |
 | 66 | Padborg |
+| 70 | Mölndals nedre |
 
 ### Route Restrictions
 
@@ -65,7 +64,6 @@ Not all station pairs are bookable:
 | Malmö → Stockholm | ✗ | Domestic Sweden blocked |
 | Malmö/Lund/Hässleholm/Alvesta/Nässjö → Linköping/Stockholm | ✗ | Short Swedish segments blocked |
 | Malmö–Nässjö → Norrköping | ✓ | Norrköping is the minimum Swedish destination from south |
-| Hamburg Hbf (69) as departure | ✗ | Only Hamburg Altona (5) works |
 
 66 of 156 station pairs are bookable (42%). General rule: cross-border segments work, domestic segments are blocked. Exception: Norrköping appears to be a boundary — bookable from southern Swedish stations, but Linköping/Stockholm are not.
 
