@@ -167,7 +167,13 @@ This reveals tier boundaries: Liege has 3 places at Tier 2 (150€), then jumps.
 | Bett Cabin | 2 | compartments (×2 = 4 berths) | vs. 39+ physical compartments |
 | Bett 1.Kl | 3 | compartments (×3 = 9 berths) | vs. 6-8 physical Deluxe compartments |
 
-These are **sales contingents**, not physical capacity. RDC likely sells the remainder via SJ's system (the train is jointly operated BTE/SJ). Contingent sizes will shift as the season progresses.
+These are **per-booking caps** (max places per single request), identical across all 29 connections and all routes (Berlin, Hamburg, intermediate stations). They do NOT reflect remaining inventory.
+
+However, **price tiers within the cap reveal actual occupancy**. Example (Sitz):
+- Low-demand date (11.09): all 5 at 60€ (Tier 1)
+- High-demand date (04.09): 2 at 80€ (Tier 2), then jumps to 100€ (Tier 3)
+
+The tier at which prices start, and where they jump, indicates how many cheap places have been sold across ALL channels (including former SJ sales).
 
 ### Per-Booking Rules
 
