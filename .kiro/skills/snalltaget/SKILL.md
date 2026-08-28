@@ -174,24 +174,49 @@ Pseudostation for booking: "Vasaloppet" (EVA 740074531).
 
 ### 306/307 — Day train Stockholm ↔ Hamburg
 
-| Station | Dep (→Hamburg) |
-|---------|----------------|
-| Stockholm C | 10:43 |
-| Södertälje Syd | 11:01 |
-| Norrköping C | 12:10 |
-| Linköping C | 12:35 |
-| Nässjö C | 13:32 |
-| Alvesta | 14:10 |
-| Hässleholm C | 14:55 |
-| Eslöv | 15:17 |
-| Lund C | 15:30 |
-| Malmö C | 15:41 |
-| København Syd | ~16:xx |
-| Odense | — |
-| Kolding | — |
-| Padborg | — |
-| Neumünster | — |
-| Hamburg Hbf | — |
+**IC 307 Stockholm → Hamburg** (11h14, Scotty-verified)
+```
+Stockholm C          dep 10:43
+Södertälje Syd           11:01
+Norrköping C             12:10
+Linköping C              12:35
+Nässjö C                 13:32
+Alvesta                  14:10
+Hässleholm C             14:55
+Eslöv                    15:17
+Lund C                   15:30
+Malmö C              arr 15:41  dep 16:15
+København Syd            16:44
+Odense st                18:12
+Kolding st               18:52
+Padborg st               19:45
+Neumünster               21:04
+Hamburg Hbf          arr 21:57
+```
+
+**IC 306 Hamburg → Stockholm** (11h26, Scotty-verified)
+```
+Hamburg Hbf          dep 09:51
+Neumünster               10:42
+Padborg st               12:06
+Kolding st               12:59
+Odense st                13:38
+København Syd            14:55
+Malmö C              arr 15:35  dep 16:18
+Lund C                   16:28
+Eslöv                    16:41
+Hässleholm C             17:05
+Alvesta                  17:45
+Nässjö C                 18:25
+Linköping C              19:22
+Norrköping C             19:48
+Södertälje Syd           20:56
+Stockholm C          arr 21:17
+```
+
+Scotty-Gattung: **IC** (not D or Sn). 34 min layover Malmö (307), 43 min (306).
+Combo with SJ night trains: D 1 arr Malmö 06:59 + IC 307 dep 16:15 (9h16 layover).
+Reverse: IC 306 arr Malmö 15:35 + D 2 dep 22:17 (6h42 layover).
 
 ### 304/305 — Night train Malmö ↔ Austria
 

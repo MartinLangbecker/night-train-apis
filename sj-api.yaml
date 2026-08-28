@@ -1,0 +1,1626 @@
+openapi: 3.0.0
+info:
+  title: SJ API
+  version: 1.0.0
+  description: |-
+    Booking and traffic information API for [sj.se](https://www.sj.se), the Swedish national railway operator.
+
+    ## Trains
+
+    SJ operates high-speed, intercity, regional, and night trains across Sweden and internationally.
+    The booking API covers all SJ-operated services. Search results also include other operators
+    (Snälltåget, Mälartåg, Västtrafik, Öresundståg) when they form part of a journey.
+
+    ### Night Trains
+
+    | Train | Route | Type |
+    | Train | Route | Type | Timetable |
+    |-------|-------|------|-----------|
+    | EN 344/345 | Berlin ↔ Stockholm (via Hamburg, Malmö) | SJEURO | SJ until 31.08, RDC from 01.09 |
+    | D 1/2 | Stockholm ↔ Malmö | SJ_NT | D 1: Sthlm 23:17→Malmö 06:59 (7h42); D 2: Malmö 22:17→Sthlm 06:21 (8h04) |
+    | D 70/71 | Stockholm ↔ Östersund / Åre / Duved | SJ_NT | D 70: Sthlm 22:40→Åre 08:04→Duved 08:17 (9h37) |
+    | D 91/92 | Stockholm ↔ Umeå | SJ_NT | D 92: Sthlm 21:55→Umeå 06:42 (8h47) |
+    | D 93/94 | Stockholm ↔ Luleå | SJ_NT | D 94: Sthlm 18:12→Luleå 06:35 (12h23) |
+
+    EN 344/345 was operated by SJ until 31.08.2026. From 01.09.2026, RDC Deutschland
+    operates the service commercially (3x/week, see [nachtexpress.de](https://www.nachtexpress.de)).
+    SJ's API no longer returns EN 344/345 departures after August 2026.
+
+    Night train service to Norrland (trains 91–94) was halved in April 2026 (Umeå–Luleå and
+    Boden–Narvik segments cancelled). Resumption of Narvik service planned for December 2026.
+
+    All domestic night trains use Gattung **D** in Scotty/HAFAS.
+
+    ### Service Types
+
+    `serviceType` in the API response is an **object** (not a string), containing:
+
+    ```json
+    {
+      "code": "SJHIGH",
+      "name": "SJ Snabbtåg",
+      "modality": "HIGHSPEED_RAIL",
+      "brandCode": "ST",
+      "description": "SJ Snabbtåg",
+      "operatorName": "SJ",
+      "ricsCode": "74",
+      "externalReferences": { "TTFILTERGROUP": "SJ_HIGH", ... }
+    }
+    ```
+
+    The `code` field values (used in search filters):
+
+    | code | name | modality |
+    |------|------|----------|
+    | SJHIGH | SJ Snabbtåg | HIGHSPEED_RAIL |
+    | SJIC | SJ InterCity | — |
+    | SJREG | SJ Regional | REGIONAL_RAIL_SERVICE |
+    | SJNT | SJ Nattåg | — |
+    | SJEURO | SJ EuroNight | — |
+    | XSNALL | Snälltåget tåg | LONG_DISTANCE_TRAINS |
+    | XMALARTAG | Mälartåg | REGIONAL_RAIL_SERVICE |
+    | XORESUNDSTAG | Öresundståg | REGIONAL_RAIL_SERVICE |
+    | XPTA_O_TRAIN | Västtrafik tåg | REGIONAL_RAIL_SERVICE |
+    | X_EXPBUS | Express bus | — |
+
+    ### Vehicle Brands
+
+    Legs include `serviceBrandName` (object) and `vehicleImage`:
+
+    | vehicleImage | Brand | Description |
+    |-------------|-------|-------------|
+    | X2ORG | BRAND-X2000 | X 2000 (tilting train) |
+    | X55 | BRAND-SJ3000 | SJ 3000 (high-speed) |
+    | X40 | — | SJ Regional |
+    | EURONIGHT | — | Night train (international) |
+    | generic_train | — | Other operators |
+    | generic_old_train | — | Snälltåget |
+
+    ## Authentication
+
+    All API calls require an `Ocp-Apim-Subscription-Key` header **and** a realistic `User-Agent`
+    header (403 Forbidden without it). Two subscription keys:
+
+    | Key | Scope |
+    |-----|-------|
+    | `d6625619def348d38be070027fd24ff6` | Booking API (`/public/sales/booking/v3/`) |
+    | `39296c1a13304493b44236e1bcb7f544` | Traffic Info API (`/public/trafficinfo-api/v2/`) |
+
+    No user login is required for the full booking flow (search → book → pay).
+    Optional login via Azure AD B2C (`id.sj.se`) for account features (points, travel history).
+
+    ## Stations
+
+    The `/config` endpoint returns 6546 stations with UIC codes, coordinates, and synonyms.
+
+    Key stations:
+
+    | Station | UIC Code |
+    |---------|----------|
+    | Stockholm Central | 740000001 |
+    | Malmö Central | 740000003 |
+    | Göteborg Central | 740000002 |
+    | Berlin | 800030110 |
+    | Berlin Lichtenberg | 800010111 |
+    | Berlin Gesundbrunnen | 800010102 |
+    | Hamburg Hbf | 800020400 |
+    | København H | 860000001 |
+
+    ## Passenger Categories
+
+    | Type | Age range |
+    |------|-----------|
+    | ADULT | — |
+    | CHILD_AND_YOUTH | 0–25 |
+    | STUDENT | 15–120 |
+    | SENIOR | 18–120 |
+
+    ## Comfort Types (Night Trains)
+
+    | Code | Description |
+    |------|-------------|
+    | COUCHETTE_SHARED | Shared couchette (6-berth), gender selection required |
+    | COUCHETTE_PRIVATE | Private couchette compartment |
+    | SLEEPER_SECOND_SHARED | Shared sleeper 2nd class, gender selection required |
+    | SLEEPER_SECOND_PRIVATE | Private sleeper 2nd class |
+    | SLEEPER_FIRST_PRIVATE | Private sleeper 1st class |
+    | SLEEPER_FIRST_PRIVATE_SOLO | Private sleeper 1st class, single occupancy |
+
+    Gender options for shared compartments: `MEN`, `LADIES`, `MIXED`.
+
+    ## Flexibility Tiers
+
+    | Code | Description |
+    |------|-------------|
+    | NOFLEX | Non-rebookable, cheapest |
+    | SEMIFLEX | Rebookable |
+    | FULLFLEX | Fully flexible, refundable |
+
+    ## Booking Flow
+
+    1. `GET /config` → stations, passenger types, cards, search filters
+    2. `POST /search` → `departureSearchId` + `passengerListId`
+    3. `GET /departures/search/{departureSearchId}` → available trains
+    4. `GET /departures/{departureId}/offers?passengerListId=...` → prices per comfort/flex
+    5. `GET /seats/{departureSearchId}/compartments` → gender options (optional)
+    6. `POST /bookings/provisional` → creates booking with 30-min hold
+    7. `POST /seats/options` → berth placement options (LOWER/MIDDLE/UPPER_BED)
+    8. `PATCH /bookings/provisional/{id}/seats` → request specific berth (optional)
+    9. `PATCH /bookings/provisional/{id}/customer` → set contact info
+    10. `PATCH /bookings/provisional/{id}/passengers` → set passenger names
+    11. `GET /bookings/{id}/allpaymentmethods` → available payment methods
+    12. `POST /bookings/{id}/checkout` → initiate payment → redirect to Worldpay
+    13. `GET /payments/{transactionId}/poll` → poll for completion
+
+    Bookings expire 30 minutes after creation.
+
+    ## Payment Methods
+
+    | Code | Description | Requires login? |
+    |------|-------------|-----------------|
+    | HOSTED_CARD_WEB | Credit/debit card (Worldpay) | No |
+    | SWISH | Swish (Swedish mobile payment) | No |
+    | PRIVATE_INVOICE | Invoice | No |
+    | TRAVEL_ACCOUNT | SJ travel account | Yes |
+    | COMP_INVOICE | Company invoice | Yes |
+
+    ## Prices
+
+    All amounts are in SEK as strings without decimals (e.g. `"2235"` = 2235 SEK).
+servers:
+  - url: https://prod-api.adp.sj.se
+paths:
+  /public/featureflags/1.0:
+    get:
+      tags:
+        - Configuration
+      summary: Get Feature Flags
+      operationId: getFeatureFlags
+      description: |-
+        Returns feature flags controlling UI behavior. No subscription key required.
+
+        Returns ~73 flags including `sjse-booking-client_bubbi-enabled` (chatbot),
+        `sjse-booking-client_comfort-filter`, etc.
+      responses:
+        '200':
+          description: Feature flags
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+
+  /public/sales/booking/v3/config:
+    get:
+      tags:
+        - Configuration
+      summary: Get Booking Configuration
+      operationId: getConfig
+      description: |-
+        Returns the complete booking configuration: stations (6546), passenger categories,
+        discount cards, special needs options, search filters, and sales period restrictions.
+
+        This is the primary reference endpoint for station UIC codes and available options.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+      responses:
+        '200':
+          description: Full booking configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  salesChannel:
+                    type: object
+                    properties:
+                      salesChannelCode:
+                        type: string
+                        example: SJ_DIGITAL
+                      groupSettings:
+                        type: object
+                        properties:
+                          bookingGroupStart:
+                            type: integer
+                            example: 9
+                          bookingMaxAdults:
+                            type: integer
+                            example: 9
+                          bookingMaxChildren:
+                            type: integer
+                            example: 5
+                          bookingMaxPersons:
+                            type: integer
+                            example: 9
+                  stations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: Stockholm Central
+                        uicStationCode:
+                          type: string
+                          example: '740000001'
+                        shortName:
+                          type: string
+                        synonyms:
+                          type: array
+                          items:
+                            type: string
+                        sequenceNumber:
+                          type: integer
+                        latitude:
+                          type: string
+                        longitude:
+                          type: string
+                        agglomeration:
+                          type: boolean
+                  passengerCategories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [ADULT, CHILD_AND_YOUTH, STUDENT, SENIOR]
+                        ageSpan:
+                          type: object
+                          properties:
+                            ageFrom:
+                              type: integer
+                            ageTo:
+                              type: integer
+                  cards:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          example: SJ_PRIO
+                        prefix:
+                          type: string
+                        length:
+                          type: integer
+                        category:
+                          type: string
+                  specialNeeds:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                          enum: [NO, WCHAIR, PETS]
+                  discountCardTypes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                          enum: [UIC_INTERRAIL, EMPLOYEE_CARD]
+                  additionalSearchFilters:
+                    type: array
+                    items:
+                      type: string
+                  salesPeriodRestrictions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        numberOfDays:
+                          type: integer
+
+  /public/sales/booking/v3/search:
+    post:
+      tags:
+        - Search
+      summary: Create Search Session
+      operationId: createSearch
+      description: |-
+        Creates a new search session and returns UUIDs needed for subsequent calls.
+
+        Returns:
+        - `departureSearchId` — used to fetch departures
+        - `passengerListId` — used for offers and booking (valid for ~2 hours)
+        - `passengers[].id` — e.g. `passenger_1`, used in booking
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [origin, destination, departureDate, passengers]
+              properties:
+                origin:
+                  type: string
+                  description: UIC station code
+                  example: '800030110'
+                destination:
+                  type: string
+                  description: UIC station code
+                  example: '740000001'
+                departureDate:
+                  type: string
+                  format: date
+                  example: '2026-09-15'
+                returnDate:
+                  type: string
+                  format: date
+                passengers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      passengerCategory:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                            enum: [ADULT, CHILD_AND_YOUTH, STUDENT, SENIOR]
+                outboundAdditionalSearchFilters:
+                  $ref: '#/components/schemas/SearchFilters'
+                inboundAdditionalSearchFilters:
+                  $ref: '#/components/schemas/SearchFilters'
+      responses:
+        '200':
+          description: Search session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchSession'
+
+  /public/sales/booking/v3/search/{passengerListId}:
+    patch:
+      tags:
+        - Search
+      summary: Update Search Session
+      operationId: updateSearch
+      description: |-
+        Updates an existing search session (change date or route) without recreating the passenger list.
+        Returns a new `departureSearchId`.
+
+        **Important:** The `passengers` field is silently ignored. Changing the passenger count
+        requires a new POST /search. The sj.se frontend triggers a fresh search when the
+        passenger count changes.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - name: passengerListId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                origin:
+                  type: string
+                destination:
+                  type: string
+                departureDate:
+                  type: string
+                  format: date
+                returnDate:
+                  type: string
+                  format: date
+                  description: Adds return journey (destination → origin). Empty string removes it.
+                passengers:
+                  type: array
+                  description: Change passenger count or category
+                  items:
+                    type: object
+                    properties:
+                      passengerCategory:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                            enum: [ADULT, CHILD_AND_YOUTH, STUDENT, SENIOR]
+                outboundAdditionalSearchFilters:
+                  $ref: '#/components/schemas/SearchFilters'
+                inboundAdditionalSearchFilters:
+                  $ref: '#/components/schemas/SearchFilters'
+      responses:
+        '200':
+          description: Updated search session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchSession'
+
+  /public/sales/booking/v3/departures/search/{departureSearchId}:
+    get:
+      tags:
+        - Departures
+      summary: Get Departures
+      operationId: getDepartures
+      description: |-
+        Returns available train connections for a search session.
+
+        Each departure includes:
+        - `departureId` — UUID, use to fetch offers
+        - `legs[]` — individual train segments with service names, vehicle types, stations
+        - `producer` — always `SJ_ONLY` for SJ trains
+        - `vehicle` — e.g. `EURONIGHT` for night trains
+        - `nightTrain` — boolean flag
+        - `duration` — ISO 8601 duration (e.g. `PT14H51M`)
+        - `unavailableReasons` — empty if available
+
+        The `serviceIdentifier` is a Base32-encoded opaque token used in subsequent calls.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - name: departureSearchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Available departures
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  travels:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        origin:
+                          $ref: '#/components/schemas/Station'
+                        destination:
+                          $ref: '#/components/schemas/Station'
+                        direction:
+                          type: string
+                          enum: [OUTBOUND, RETURN]
+                        departureDate:
+                          type: string
+                          format: date
+                        departures:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/Departure'
+
+  /public/sales/booking/v3/departures/{departureId}/offers:
+    get:
+      tags:
+        - Offers
+      summary: Get Offers for Departure
+      operationId: getOffers
+      description: |-
+        Returns available products and prices for a specific departure.
+
+        **Seat offers** (`seatOffers`): SECOND, SECOND_CALM, FIRST — each with NOFLEX/SEMIFLEX/FULLFLEX.
+
+        **Bed offers** (`bedOffers`): COUCHETTE and SLEEPER categories, each with comfort types
+        (COUCHETTE_SHARED, COUCHETTE_PRIVATE, SLEEPER_SECOND_SHARED, SLEEPER_SECOND_PRIVATE,
+        SLEEPER_FIRST_PRIVATE, SLEEPER_FIRST_PRIVATE_SOLO).
+
+        Each comfort type has flexibility tiers with:
+        - `offerId` — UUID, used to create provisional booking
+        - `journeyPrices.price.amount` — price in SEK (string, no decimals)
+        - `compartmentSize` — e.g. "2–6 travellers"
+        - `genderTypeRequired` — true for shared compartments
+
+        **Availability** is reported per service and comfort type in the `availabilities` array.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - name: departureId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: passengerListId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Available offers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffersResponse'
+
+  /public/sales/booking/v3/seats/{departureSearchId}/compartments:
+    get:
+      tags:
+        - Seats
+      summary: Get Compartment Types
+      operationId: getCompartments
+      description: |-
+        Returns available compartment types and gender options for a departure.
+
+        Gender codes for shared compartments:
+        - `MEN` — Men only
+        - `LADIES` — Women only
+        - `MIXED` — Mixed
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - name: departureSearchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Compartment availability
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    serviceIdentifier:
+                      type: string
+                    compartmentAvailabilities:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          compartmentType:
+                            type: string
+                            enum: [COUCHETTE, SLEEPER]
+                          compartmentGenderTypes:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                propertyGenderCode:
+                                  type: string
+                                  enum: [MEN, LADIES, MIXED]
+
+  /public/sales/booking/v3/seats/options:
+    post:
+      tags:
+        - Seats
+      summary: Get Seat Placement Options
+      operationId: getSeatOptions
+      description: |-
+        Returns available berth positions and carriages for a booking.
+
+        Placement codes:
+        - `LOWER_BED` — Lower berth
+        - `MIDDLE_BED` — Middle berth
+        - `UPPER_BED` — Upper berth
+
+        The `seatTokenId` is a long opaque token from the provisional booking response.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seatTokenId:
+                  type: string
+                  description: Opaque token from booking response
+      responses:
+        '200':
+          description: Seat placement options
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seatOptions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        serviceIdentifier:
+                          type: string
+                        direction:
+                          type: string
+                          enum: [OUTBOUND, RETURN]
+                        canSpecifySeat:
+                          type: boolean
+                        canSpecifyCarriage:
+                          type: boolean
+                        canSpecifyCloseTo:
+                          type: boolean
+                        seatPlacementCodes:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              code:
+                                type: string
+                                enum: [LOWER_BED, MIDDLE_BED, UPPER_BED]
+                              description:
+                                type: string
+                              seatCategory:
+                                type: string
+                        carriages:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              carriageNumber:
+                                type: string
+
+  /public/sales/booking/v3/bookings/provisional:
+    post:
+      tags:
+        - Booking
+      summary: Create Provisional Booking
+      operationId: createProvisionalBooking
+      description: |-
+        Creates a provisional booking with a 30-minute hold.
+
+        Returns the full booking object including:
+        - `bookingId` (UUID)
+        - `bookingNumber` (8-char alphanumeric, e.g. "W75UEZQH")
+        - `bookingStatus`: "NEW"
+        - `expires`: 30 min from creation
+        - `priceToPay`: total in SEK
+        - `journeys[]` with segments, stations, products
+        - `productFamilies` with codes (e.g. `C_NON`, `C_REB`, `1_REB`)
+
+        Product family codes:
+        - `C_NON` — Couchette, 2nd class, Non-rebookable
+        - `C_REB` — Couchette, 2nd class, Rebookable
+        - `1_REB` — 1st class, Rebookable
+        - `X_2ONLY_NON` — 2nd class, Non-rebookable
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outboundOfferId, passengerToken]
+              properties:
+                outboundOfferId:
+                  type: string
+                  format: uuid
+                  description: offerId from the offers endpoint
+                returnOfferId:
+                  type: string
+                  format: uuid
+                passengerToken:
+                  type: string
+                  format: uuid
+                  description: passengerListId from search
+                usePoints:
+                  type: boolean
+                  default: false
+                sharedCompartmentTypes:
+                  type: object
+                  properties:
+                    outbound:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          serviceIdentifier:
+                            type: string
+                          propertyCode:
+                            type: string
+                            enum: [MEN, LADIES, MIXED]
+                    return:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          serviceIdentifier:
+                            type: string
+                          propertyCode:
+                            type: string
+                            enum: [MEN, LADIES, MIXED]
+      responses:
+        '200':
+          description: Provisional booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /public/sales/booking/v3/bookings/provisional/{bookingId}:
+    patch:
+      tags:
+        - Booking
+      summary: Update Provisional Booking
+      operationId: updateProvisionalBooking
+      description: |-
+        Adds a return journey or changes offers within an existing provisional booking.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                offerId:
+                  type: string
+                  format: uuid
+                passengerToken:
+                  type: string
+                  format: uuid
+                usePoints:
+                  type: boolean
+                sharedCompartmentTypes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      serviceIdentifier:
+                        type: string
+                      propertyCode:
+                        type: string
+                        enum: [MEN, LADIES, MIXED]
+      responses:
+        '200':
+          description: Updated booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /public/sales/booking/v3/bookings/provisional/{bookingId}/customer:
+    patch:
+      tags:
+        - Booking
+      summary: Set Customer Details
+      operationId: setCustomer
+      description: |-
+        Sets the contact person (customer) details for the booking.
+        Required before checkout.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firstName, lastName, email, phoneNumber]
+              properties:
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phoneNumber:
+                  type: string
+                  description: International format (e.g. 004915012345678)
+      responses:
+        '200':
+          description: Customer details set
+
+  /public/sales/booking/v3/bookings/provisional/{bookingId}/passengers:
+    patch:
+      tags:
+        - Booking
+      summary: Set Passenger Names
+      operationId: setPassengers
+      description: |-
+        Sets passenger names for the booking. Required before checkout.
+        Passenger IDs (e.g. `passenger_1`) come from the search response.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                passengers:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, firstName, lastName]
+                    properties:
+                      id:
+                        type: string
+                        example: passenger_1
+                      firstName:
+                        type: string
+                      lastName:
+                        type: string
+                      email:
+                        type: string
+                        format: email
+                      phoneNumber:
+                        type: string
+      responses:
+        '200':
+          description: Passenger names set
+
+  /public/sales/booking/v3/bookings/provisional/{bookingId}/seats:
+    patch:
+      tags:
+        - Booking
+      summary: Request Specific Berth
+      operationId: updateSeats
+      description: |-
+        Requests a specific berth position (LOWER_BED, MIDDLE_BED, UPPER_BED) for a booking.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                updateSegmentSeats:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      direction:
+                        type: string
+                        enum: [OUTBOUND, RETURN]
+                      serviceIdentifier:
+                        type: string
+                      seatPlacementCode:
+                        type: string
+                        enum: [LOWER_BED, MIDDLE_BED, UPPER_BED]
+      responses:
+        '200':
+          description: Seat preferences updated
+
+  /public/sales/booking/v3/bookings/provisional/{bookingId}/cancel:
+    patch:
+      tags:
+        - Booking
+      summary: Cancel Provisional Booking
+      operationId: cancelProvisionalBooking
+      description: |-
+        Cancels a provisional booking. Returns 422 if payment is already in progress.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Booking cancelled
+        '422':
+          description: Payment already in progress
+
+  /public/sales/booking/v3/bookings/{bookingId}/allpaymentmethods:
+    get:
+      tags:
+        - Payment
+      summary: Get Payment Methods
+      operationId: getPaymentMethods
+      description: |-
+        Returns available payment methods for a booking.
+        Methods with `disabledReason: null` are available; others are disabled (e.g. require login).
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Available payment methods
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  paymentMethods:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                          enum: [HOSTED_CARD_WEB, AWP_CARD_WEB, SWISH, PRIVATE_INVOICE, TRAVEL_ACCOUNT, COMP_INVOICE]
+                        description:
+                          type: string
+                        disabledReason:
+                          type: string
+                          nullable: true
+                        weight:
+                          type: integer
+
+  /public/sales/booking/v3/bookings/{bookingId}/checkout:
+    post:
+      tags:
+        - Payment
+      summary: Initiate Checkout
+      operationId: checkout
+      description: |-
+        Initiates payment for a booking. For card payments, returns a redirect URL
+        to the Worldpay hosted payment page (hpp.worldpay.com).
+
+        The `urlRedirect` template uses `{transactionId}`, `{bookingId}`, and `{paymentStatus}`
+        placeholders that are filled by the API in the redirect URL.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentMethod]
+              properties:
+                paymentMethod:
+                  type: string
+                  enum: [HOSTED_CARD_WEB, AWP_CARD_WEB, SWISH, PRIVATE_INVOICE]
+                card:
+                  type: object
+                  properties:
+                    urlRedirect:
+                      type: string
+                      description: URL template with {transactionId}, {bookingId}, {paymentStatus} placeholders
+                    darkMode:
+                      type: boolean
+      responses:
+        '200':
+          description: Checkout initiated
+
+  /public/sales/booking/v3/bookings/{bookingId}/checkout/pending:
+    get:
+      tags:
+        - Payment
+      summary: Check Pending Payment
+      operationId: checkPendingPayment
+      description: |-
+        Checks if a payment is currently pending for a booking.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Pending payment status
+
+  /public/sales/booking/v3/payments/{transactionId}/poll:
+    get:
+      tags:
+        - Payment
+      summary: Poll Payment Status
+      operationId: pollPayment
+      description: |-
+        Polls for payment completion after the Worldpay redirect.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment status
+
+  /public/sales/booking/v3/bookings/{bookingId}/addons/{addonSearchId}/offers:
+    post:
+      tags:
+        - Addons
+      summary: Get Addon Offers
+      operationId: getAddonOffers
+      description: |-
+        Fetches available addon products for a journey (e.g. food pre-orders).
+        The `addonSearchId` comes from the journey object in the booking response.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+        - $ref: '#/components/parameters/BookingId'
+        - name: addonSearchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Available addons
+
+  /public/sales/booking/v3/promos/validate:
+    post:
+      tags:
+        - Promos
+      summary: Validate Promo Code
+      operationId: validatePromo
+      description: |-
+        Validates a promotional code. Returns 404 with code 31065 for invalid codes.
+      parameters:
+        - $ref: '#/components/parameters/BookingApiKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                promoCode:
+                  type: string
+                customerIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Valid promo code
+        '404':
+          description: Invalid promo code (error code 31065)
+
+  /public/trafficinfo-api/v2/rest/remarks/announcements:
+    get:
+      tags:
+        - Traffic Info
+      summary: Get Traffic Announcements
+      operationId: getAnnouncements
+      description: |-
+        Returns traffic information announcements (disruptions, maintenance, etc.).
+
+        Uses a different subscription key than the booking API.
+      parameters:
+        - $ref: '#/components/parameters/TrafficInfoApiKey'
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [en, sv]
+            default: en
+        - name: tags
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [DISASTER_INFO, TRAFFIC_INFO]
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: Traffic announcements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  remarks:
+                    type: array
+                    items:
+                      type: object
+
+  /public/trafficinfo-api/v2/rest/segments:
+    post:
+      tags:
+        - Traffic Info
+      summary: Get Segment Traffic Status
+      operationId: getSegmentStatus
+      description: |-
+        Returns live traffic status per segment (track changes, delays, remarks).
+
+        `ricsCode` is the RICS company code (e.g. `74` for SJ).
+      parameters:
+        - $ref: '#/components/parameters/TrafficInfoApiKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                segments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      departureUicStationCode:
+                        type: string
+                      arrivalUicStationCode:
+                        type: string
+                      serviceName:
+                        type: string
+                        description: Train number (e.g. "344")
+                      serviceScheduleDate:
+                        type: string
+                        format: date
+                      transportMethod:
+                        type: string
+                        enum: [TRAIN, BUS]
+                      ricsCode:
+                        type: string
+                        example: '74'
+      responses:
+        '200':
+          description: Segment traffic status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        departureUicStationCode:
+                          type: string
+                        arrivalUicStationCode:
+                          type: string
+                        remarks:
+                          type: array
+                          items:
+                            type: object
+                        status:
+                          type: integer
+                        originalTrack:
+                          type: string
+                          nullable: true
+                        currentTrack:
+                          type: string
+                          nullable: true
+                        changedTrack:
+                          type: boolean
+                        trafficInformationUnavailableReason:
+                          type: string
+                          nullable: true
+
+components:
+  parameters:
+    BookingApiKey:
+      name: Ocp-Apim-Subscription-Key
+      in: header
+      required: true
+      description: Booking API subscription key
+      schema:
+        type: string
+        default: d6625619def348d38be070027fd24ff6
+    TrafficInfoApiKey:
+      name: Ocp-Apim-Subscription-Key
+      in: header
+      required: true
+      description: Traffic Info API subscription key
+      schema:
+        type: string
+        default: 39296c1a13304493b44236e1bcb7f544
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    Station:
+      type: object
+      properties:
+        uicStationCode:
+          type: string
+        name:
+          type: string
+        shortName:
+          type: string
+          nullable: true
+
+    ServiceType:
+      type: object
+      description: Rich service type descriptor with operator info and modality
+      properties:
+        code:
+          type: string
+          description: Filter code (e.g. SJHIGH, SJREG, SJEURO, XSNALL)
+        name:
+          type: string
+          description: Display name (e.g. "SJ Snabbtåg")
+        modality:
+          type: string
+          description: Transport modality (e.g. HIGHSPEED_RAIL, REGIONAL_RAIL_SERVICE, LONG_DISTANCE_TRAINS)
+        brandCode:
+          type: string
+          description: Short brand code (e.g. ST, RE, BLÅ)
+        description:
+          type: string
+        operatorName:
+          type: string
+          description: Operator name (e.g. SJ, Snälltåget, Västtrafik, Mälartåg)
+        ricsCode:
+          type: string
+          description: RICS company code (e.g. "74" for SJ, "380" for Snälltåget)
+        externalReferences:
+          type: object
+          additionalProperties:
+            type: string
+        translations:
+          type: object
+
+    SearchSession:
+      type: object
+      properties:
+        departureSearchId:
+          type: string
+          format: uuid
+        returnDepartureSearchId:
+          type: string
+          format: uuid
+          nullable: true
+        departureSearchExpires:
+          type: string
+          format: date-time
+        origin:
+          $ref: '#/components/schemas/Station'
+        destination:
+          $ref: '#/components/schemas/Station'
+        passengerListId:
+          type: string
+          format: uuid
+        passengerListExpires:
+          type: string
+          format: date-time
+        passengers:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: passenger_1
+              passengerCategory:
+                type: object
+                properties:
+                  type:
+                    type: string
+        outboundAdditionalSearchFilters:
+          $ref: '#/components/schemas/SearchFilters'
+        inboundAdditionalSearchFilters:
+          $ref: '#/components/schemas/SearchFilters'
+        warnings:
+          type: array
+          items:
+            type: object
+
+    SearchFilters:
+      type: object
+      description: |-
+        Filters for outbound/inbound search. Applied via `outboundAdditionalSearchFilters`
+        or `inboundAdditionalSearchFilters` in POST/PATCH /search.
+      properties:
+        onlyDirectJourneys:
+          type: boolean
+          nullable: true
+          description: Only direct connections (no transfers)
+        allowedServiceTypes:
+          type: array
+          nullable: true
+          description: |-
+            Whitelist of service type codes. Mutually exclusive with excludedServiceTypes.
+            Night trains only: `["SJ_NT"]`.
+            Day trains only: `["X_EXPBUS", "X_PTA", "X_TRAINOPS", "SJ_REG", "SJ_IC", "SJ_HIGH"]`.
+          items:
+            type: string
+            enum: [SJ_NT, SJ_HIGH, SJ_IC, SJ_REG, SJ_EURO, X_EXPBUS, X_PTA, X_TRAINOPS, X_SNALL, X_MALARTAG, X_ORESUNDSTAG, X_PTA_O_TRAIN]
+        excludedServiceTypes:
+          type: array
+          nullable: true
+          description: Blacklist of service type codes
+          items:
+            type: string
+        departureDateTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: Earliest departure time filter
+        arrivalDateTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: Latest arrival time filter
+        viaStations:
+          type: array
+          nullable: true
+          description: Force routing through these stations (UIC codes)
+          items:
+            type: string
+          example: ['740000002']
+        interchangeStations:
+          type: array
+          nullable: true
+          description: Restrict which stations can be used for transfers
+          items:
+            type: string
+        minTransferTimeInMinutes:
+          type: integer
+          nullable: true
+          description: Minimum transfer time at interchange stations (minutes)
+        minTransferTime:
+          type: string
+          nullable: true
+          description: Minimum transfer time (ISO 8601 duration)
+
+    Departure:
+      type: object
+      properties:
+        departureId:
+          type: string
+          format: uuid
+        numberOfChanges:
+          type: integer
+        producer:
+          type: string
+          example: SJ_ONLY
+        numberOfOperators:
+          type: integer
+        arrivalDateTime:
+          type: string
+          format: date-time
+        departureDateTime:
+          type: string
+          format: date-time
+        duration:
+          type: string
+          description: ISO 8601 duration
+          example: PT14H51M
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Leg'
+        unavailableReasons:
+          type: array
+          items:
+            type: object
+        resplus:
+          type: boolean
+
+    Leg:
+      type: object
+      properties:
+        origin:
+          $ref: '#/components/schemas/Station'
+        destination:
+          $ref: '#/components/schemas/Station'
+        departureDateTime:
+          type: string
+          format: date-time
+        arrivalDateTime:
+          type: string
+          format: date-time
+        serviceName:
+          type: string
+          description: Train number
+          example: '344'
+        publicServiceName:
+          type: string
+        secondaryServiceName:
+          type: string
+          nullable: true
+        serviceType:
+          $ref: '#/components/schemas/ServiceType'
+        serviceIdentifier:
+          type: string
+          description: Base32-encoded opaque identifier
+        serviceScheduleDate:
+          type: string
+          format: date
+        producer:
+          type: string
+        transportMethod:
+          type: string
+          enum: [TRAIN, BUS]
+        transportMethodDescription:
+          type: string
+          description: Localized transport method name (e.g. "Tåg")
+        vehicle:
+          type: string
+          description: Vehicle type (e.g. EURONIGHT, X2ORG, X55, X40)
+        vehicleImage:
+          type: string
+          description: Image identifier (e.g. X2ORG, X55, generic_train, EURONIGHT)
+        serviceBrandName:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+              description: e.g. BRAND-X2000, BRAND-SJ3000
+            description:
+              type: string
+              description: e.g. "X 2000", "SJ 3000"
+        serviceBrandNameDescription:
+          type: string
+          nullable: true
+        seatMapAvailable:
+          type: boolean
+        nightTrain:
+          type: boolean
+        international:
+          type: boolean
+        earnSjPrioPoints:
+          type: boolean
+        duration:
+          type: string
+          description: ISO 8601 duration for this leg
+        changeTime:
+          type: string
+          nullable: true
+          description: Transfer time to this leg (null for first leg)
+        pathWay:
+          type: boolean
+          description: Whether passenger must walk between platforms
+        serviceProperties:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Property code (e.g. FOOD-BISTRO, WIFI-TRUE, COMFORT-AB)
+              description:
+                type: string
+        travelInformationMessages:
+          type: array
+          items:
+            type: object
+        unavailableReasons:
+          type: array
+          items:
+            type: object
+
+    OffersResponse:
+      type: object
+      properties:
+        departureId:
+          type: string
+          format: uuid
+        seatOffers:
+          type: object
+          properties:
+            offers:
+              type: object
+              description: Keys are SECOND, SECOND_CALM, FIRST
+              additionalProperties:
+                type: object
+                properties:
+                  flexibilities:
+                    type: object
+                    description: Keys are NOFLEX, SEMIFLEX, FULLFLEX
+                    additionalProperties:
+                      $ref: '#/components/schemas/Offer'
+                  available:
+                    type: boolean
+        bedOffers:
+          type: object
+          properties:
+            offers:
+              type: object
+              description: Keys are COUCHETTE, SLEEPER
+              additionalProperties:
+                type: object
+                properties:
+                  comfortTypes:
+                    type: object
+                    description: Keys are comfort type codes
+                    additionalProperties:
+                      type: object
+                      properties:
+                        flexibilities:
+                          type: object
+                          additionalProperties:
+                            $ref: '#/components/schemas/Offer'
+                        genderTypeRequired:
+                          type: boolean
+                        compartmentInformationType:
+                          type: string
+        departureStatus:
+          type: string
+          enum: [AVAILABLE, SOLD_OUT]
+        availabilities:
+          type: array
+          items:
+            type: object
+            properties:
+              serviceIdentifier:
+                type: string
+              availableSeats:
+                type: object
+                properties:
+                  availableForComforts:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        availableInOffer:
+                          type: boolean
+                        availableSeats:
+                          type: boolean
+              publicServiceName:
+                type: string
+
+    Offer:
+      type: object
+      properties:
+        offerId:
+          type: string
+          format: uuid
+        available:
+          type: boolean
+        journeyPrices:
+          type: object
+          properties:
+            price:
+              $ref: '#/components/schemas/Price'
+            originalPrice:
+              $ref: '#/components/schemas/Price'
+            totalPriceToBePaid:
+              $ref: '#/components/schemas/Price'
+        containsBedProduct:
+          type: boolean
+        compartmentSize:
+          type: string
+          description: e.g. "2–6 travellers"
+
+    Price:
+      type: object
+      properties:
+        amount:
+          type: string
+          description: Amount in SEK as string without decimals
+          example: '2235'
+        currency:
+          type: string
+          example: SEK
+
+    Booking:
+      type: object
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        bookingNumber:
+          type: string
+          description: 8-char alphanumeric reference
+          example: W75UEZQH
+        bookingStatus:
+          type: string
+          enum: [NEW, CONFIRMED, CANCELLED]
+        expires:
+          type: string
+          format: date-time
+          description: 30 minutes from creation
+        priceToPay:
+          $ref: '#/components/schemas/Price'
+        journeys:
+          type: array
+          items:
+            type: object
+        productFamilies:
+          type: array
+          items:
+            type: object
+        passengers:
+          type: array
+          items:
+            type: object
+        warnings:
+          type: array
+          items:
+            type: object

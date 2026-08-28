@@ -59,6 +59,21 @@ Booking API for [snalltaget.se](https://www.snalltaget.se), including:
 - Station codes use names for German cities (`Berlin`, `Hamburg`) and numeric IDs for Swedish (`740000001`)
 - Cloudflare-protected (realistic User-Agent required)
 
+### SJ (`sj-api.yaml`)
+Booking and traffic information API for [sj.se](https://www.sj.se), including:
+- REST API with subscription key auth (no login, no captcha)
+- Full booking flow (search → departures → offers → provisional booking → payment via Worldpay/Swish)
+- EN 344/345: Berlin ↔ Stockholm (EuroNight, operated by BTE/SJ)
+- 6 night train comfort types: couchette (shared/private), sleeper 2nd (shared/private), sleeper 1st (private/solo)
+- Gender selection for shared compartments (MEN, LADIES, MIXED)
+- 3 flexibility tiers: NOFLEX, SEMIFLEX, FULLFLEX
+- Berth position selection (LOWER_BED, MIDDLE_BED, UPPER_BED)
+- 6546 stations with UIC codes and GPS coordinates
+- 4 passenger categories (Adult, Child/Youth 0–25, Student, Senior)
+- Discount cards (SJ Prio, Interrail/Eurail, Employee)
+- Live traffic info per segment (track changes, delays, disruptions)
+- 30-minute booking expiry, prices in SEK
+
 ### RDC EuroNight (`rdc-euronight-api.yaml`)
 Booking API for [tickets.rdc-deutschland.de](https://tickets.rdc-deutschland.de), including:
 - GraphQL endpoint (no auth, introspection disabled)
