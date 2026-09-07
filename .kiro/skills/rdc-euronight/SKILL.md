@@ -205,18 +205,34 @@ Sources:
 
 WLABmz AB32 layout per car: 13 standard compartments (2-berth, washbasin) + 2 Deluxe compartments (2–3 berth, shower+toilet).
 
-### Price Tiers (Berlin→Stockholm, Normalpreis)
+### Price Tiers (Normalpreis)
 
-| Entity | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
-|--------|--------|--------|--------|--------|
-| Sitz | 60€ | 80€ | — | — |
-| Liege Single | 120€ | 150€ | 170€ | 200€ |
-| Liege Cabin | 360€ | 430€ | 470€ | 500€ |
-| Bett Single | 200€ | 250€ | 300€ | — |
-| Bett Cabin | 300€ | 375€ | 450€ | — |
-| Bett 1.Kl Cabin | 420€ | 495€ | 525€ | 600€ |
+| Entity | T1 | T2 | T3 | T4 | T5 | T6 |
+|--------|-----|-----|-----|-----|-----|-----|
+| Sitz Single | 40€ | 54€ | 60€ | 72€ | 80€ | 90€ |
+| Liege Single | 100€ | 120€ | 150€ | 170€ | 200€ | — |
+| Liege Cabin | 300€ | 360€ | 430€ | 470€ | 500€ | — |
+| Bett Single | 200€ | 250€ | 300€ | — | — | — |
+| Bett Cabin | 300€ | 375€ | 450€ | — | — | — |
+| Bett 1.Kl Cabin | 420€ | 495€ | 525€ | 600€ | — | — |
 
-Spar = 85% of Normal, Interrail = 80% of Normal.
+Tier count varies by entity: Sitz has 6 tiers, Liege Single/Cabin 5 tiers, Bett 1.Kl 4 tiers, Bett 3 tiers. The lowest Liege tiers (100€ Single, 300€ Cabin) appear rarely — only on a few low-demand dates.
+
+### Price Category Multipliers
+
+| Category | Multiplier | Applies to |
+|----------|-----------|------------|
+| Normalpreis | 1.00× | All entity types |
+| Sparpreis | 0.85× (85% of Normal) | All except Bett 1. Klasse |
+| Interrail | 0.80× (80% of Normal) | All entity types |
+
+Bett 1. Klasse has no Sparpreis — only Normalpreis and Interrail are offered.
+
+### Tier Dynamics
+
+- Prices are **route-independent** (zugweit): same tier prices for Berlin and Hamburg departures on the same train. One contingent per train, not per routing.
+- Prices can **move backwards** (tier downgrades). Cancellations or contingent releases restore places to lower tiers, causing observed prices to decrease between snapshots.
+- Tier progression over time: T1 (plenty) → T1 (jump visible, few remain) → T2 (plenty) → … → highest tier → sold out.
 
 ## Capacity Probing via AmountAdults
 
@@ -256,8 +272,8 @@ This reveals tier boundaries: Liege has 3 places at Tier 2 (150€), then jumps.
 These are **per-booking caps** (max places per single request), identical across all 29 connections and all routes (Berlin, Hamburg, intermediate stations). They do NOT reflect remaining inventory.
 
 However, **price tiers within the cap reveal actual occupancy**. Example (Sitz):
-- Low-demand date (11.09): all 5 at 60€ (Tier 1)
-- High-demand date (04.09): 2 at 80€ (Tier 2), then jumps to 100€ (Tier 3)
+- Low-demand date (11.09): all 5 at 40€ (Tier 1)
+- High-demand date (04.09): 2 at 72€ (Tier 4), then jumps to 80€ (Tier 5)
 
 The tier at which prices start, and where they jump, indicates how many cheap places have been sold across ALL channels (including former SJ sales).
 
@@ -272,7 +288,7 @@ Two possible outcomes per entity per date:
 
 No multi-tier jumps observed within a single scan (max 1 boundary per entity per date). Tier sizes are ≥6 places.
 
-Over time, a date progresses: Tier 1 (no jump) → Tier 1 (jump visible, few remain) → Tier 2 (no jump) → Tier 2 (jump visible) → ... → Tier 4 → sold out.
+Over time, a date progresses: Tier 1 (no jump) → Tier 1 (jump visible, few remain) → Tier 2 (no jump) → Tier 2 (jump visible) → ... → highest tier → sold out.
 
 ### Per-Booking Rules
 
@@ -281,23 +297,27 @@ Over time, a date progresses: Tier 1 (no jump) → Tier 1 (jump visible, few rem
 - The UI enforces the same limits (max 5 persons for Sitz, max 6 for Liege)
 - Single and Cabin have **separate contingents** for the same wagon type (e.g., Liege Single=6 + Liege Cabin=6 independently)
 
-### Method
+### Method: Sequential Tier Scan
 
-Binary search via AmountAdults: double until empty, then bisect. ~8 requests per entity type to find exact boundary.
+Per entity type, request prices for n=1 through n=cap (Sitz=5, Liege=6, Bett=2, Bett 1.Kl=3). Every n is probed — no approximation needed given the small caps. Multiple entity types are batched in one API call.
+
+Optimized flow:
+1. Request n=1 (baseline) and n=cap simultaneously for each entity
+2. If prices match → no tier jump, capacity ≥ cap (plenty of availability)
+3. If prices differ → full sequential scan n=2..cap-1 to locate exact jump point
+4. `tier_jump_at` = first n where `SinglePrice` changes; `capacity = tier_jump_at - 1`
 
 ```python
-def find_capacity(conn_hash, entity_hash, is_cabin):
-    low, high = 1, 1
-    while has_prices(conn_hash, entity_hash, is_cabin, high):
-        low = high
-        high *= 2
-    while low < high - 1:
-        mid = (low + high) // 2
-        if has_prices(conn_hash, entity_hash, is_cabin, mid):
-            low = mid
-        else:
-            high = mid
-    return low
+# Simplified — actual implementation batches all entity types per request
+def scan_entity(conn_hash, entity_hash, is_cabin, cap):
+    p1 = get_price(conn_hash, entity_hash, is_cabin, 1)
+    pN = get_price(conn_hash, entity_hash, is_cabin, cap)
+    if p1 == pN:
+        return {"tier_jump_at": None, "capacity": "≥" + str(cap)}
+    for n in range(2, cap + 1):
+        pn = get_price(conn_hash, entity_hash, is_cabin, n)
+        if pn != p1:
+            return {"tier_jump_at": n, "capacity": n - 1, "next_tier_price": pn}
 ```
 
 ## Example: ReadTrainConnections

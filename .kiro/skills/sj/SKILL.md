@@ -280,6 +280,72 @@ See Snälltåget skill for IC 306/307 timetables.
 | SLEEPER_FIRST_PRIVATE | Private sleeper 1st class | No |
 | SLEEPER_FIRST_PRIVATE_SOLO | Private sleeper 1st class, single | No |
 
+## Price Tiers (Domestic Night Trains)
+
+SJ uses dynamic pricing with very fine-grained tiers — 40–65 distinct price steps per class/flex combination in ~10 SEK increments, far more granular than RDC EuroNight (3–6 tiers). Verified across 11 snapshots: SECOND/NOFLEX shows 48 steps, SEMIFLEX classes up to 65.
+
+### Tier Structure
+
+- 3 flexibility levels: NOFLEX, SEMIFLEX, FULLFLEX
+- Each comfort type × flexibility combination has its own independent tier ladder
+- Tier ladders are **route-specific**: Stockholm→Malmö starts at 195 SEK, →Umeå at 625, →Luleå at 415, →Duved at 425
+- Prices in SEK
+
+Example — first steps of the Stockholm→Malmö SECOND / NOFLEX ladder:
+```
+195 → 345 → 385 → 435 → 475 → 515 → 565 → 605 → 645 → 695 → 735 → 775 → ...
+```
+
+The first jump (195→345) is the largest — an initial "Sparpreis" tier. Subsequent jumps are ~40–50 SEK, then narrow to ~10 SEK increments at higher tiers (revealed via `next_tier_price`).
+
+### PRIVATE Booking Semantics
+
+PRIVATE comfort types (SLEEPER_SECOND_PRIVATE, COUCHETTE_PRIVATE) have different pricing semantics:
+
+- Price at n=1 = **full compartment price** (~2475 SEK for SLEEPER_SECOND_PRIVATE/NOFLEX)
+- `next_tier_price` at tier jump = cost for an **additional person** in the same compartment (~319–607 SEK)
+- This is NOT the next price tier — it's the **marginal cost of an extra occupant**
+
+### Capacity Probing via Passenger Count
+
+The SJ API does not expose remaining capacity. Capacity is inferred by requesting prices for increasing passenger counts and detecting where the per-person price changes (tier boundary).
+
+**Binary search approach:**
+1. Request prices for n=1 (baseline) and n=9 (ceiling) for all classes simultaneously
+2. If any class shows a price change: binary search to find exact boundary
+3. Each probe level requires a fresh `POST /search` (PATCH does not support passenger count changes)
+4. Binary search: n=5 (midpoint), then n=3 or n=7, then n=2/4/6/8 as needed
+5. Converges when interval width = 1 for all classes
+6. Max 4–5 rounds, typically 3 (most classes have no jump or jump found early)
+7. Uses total prices internally (not per-person) to avoid integer division rounding
+8. `next_tier_price` = marginal cost: `total@jump - total@(jump-1)`
+
+### Snapshot JSON Field Semantics
+
+| Field | Description |
+|-------|-------------|
+| `tier_jump_at` | Passenger count where price changes (null = no jump in probed range) |
+| `next_tier_price` | Per-person price in the next tier (marginal cost) |
+| `probed_ns` | List of passenger counts that were actually probed |
+
+Capacity derivation: `capacity = tier_jump_at - 1` (null → plenty of availability, ≥9 places in current tier).
+
+### Routes Monitored
+
+| Route | Trains | Direction |
+|-------|--------|-----------|
+| Stockholm ↔ Malmö | D 1/2 | North/South |
+| Stockholm ↔ Duved | D 70/71 | North/West |
+| Stockholm ↔ Umeå | D 91/92 | North |
+| Stockholm ↔ Luleå | D 93/94 | North |
+
+### Limitations
+
+- Capacity shows remaining places in the CURRENT tier, not total remaining places
+- When a tier sells out, prices jump to the next tier and capacity resets
+- Cancellations cause `tier_jump_at` to increase (capacity restored) and can cause price downgrades
+- PATCH does not support passenger count changes — each probe level needs a new POST /search session
+
 ## Flexibility Tiers
 
 | Code | Description |
