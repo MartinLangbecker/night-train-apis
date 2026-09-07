@@ -49,12 +49,12 @@ tags:
     description: Session and currency management
 
 paths:
-  /le#searchConnections:
+  /le#searchResults:
     post:
       tags:
         - Search
       summary: Search Connections
-      operationId: searchConnections
+      operationId: searchResults
       description: |-
         Search for train/bus connections between two stations on a given date.
         Returns connections with pricing per class, transfer info, and a `hash` used to create an order.
@@ -78,7 +78,7 @@ paths:
             schema:
               $ref: '#/components/schemas/GraphQLRequest'
             example:
-              query: 'query searchConnections($from: String, $to: String, $date: String, $persons: [RateArgument], $services: [ServiceArgument], $currency: String, $timestamp: Int, $locale: String, $token: String, $platform: String) { searchResults(from: $from, to: $to, date: $date, persons: $persons, services: $services, currency: $currency, timestamp: $timestamp, locale: $locale, token: $token, platform: $platform) { return_msg search_msg { msg icon color_bg color_bg_icon station_from { id name } station_to { id name } } return_code date timestamp connections { origin { id name type translations { locale name } } destination { id name type translations { locale name } } departure departure_time { date timezone_type timezone } arrival arrival_time { date timezone_type timezone } origin_country destination_country traveltime totaltime distance lines { line_id origin destination departure arrival departure_time { date timezone_type timezone } arrival_time { date timezone_type timezone } distance type ride_id carrier_id line_stops { station { name_master country name translations { locale name } } } services { count capacity price service_id } info { facility { class_id values } delay { delay last_seen ride_id } notice { header message type type_id from to show_date } } classes { id short name kontent_hashtag } class_info { record_id capacity max_capacity standing occupied total basictotal groupTotal guaranted co2 cashback optimized is_promo rates { record_id price basicprice groupPrice count } passengers } line_obj { short name type carrier_id carrier { id name label } transport_type info { facilities { class_id values } name_required } } scheme } transfers { id distance time type subtype station_from { id name } station_to { id name } line_from line_to area { short name country timezone } } classes { id short name } class_info { record_id capacity max_capacity standing total basictotal groupTotal guaranted co2 cashback optimized is_promo rates { price basicprice groupPrice count } passengers } top_combination { total basictotal lines { line class_id short name } } msg currency hash d2d_info { dropoff pickup } } error { code message } } }'
+              query: 'query searchResults($from: String, $to: String, $date: String, $persons: [RateArgument], $services: [ServiceArgument], $currency: String, $timestamp: Int, $locale: String, $token: String, $platform: String) { searchResults(from: $from, to: $to, date: $date, persons: $persons, services: $services, currency: $currency, timestamp: $timestamp, locale: $locale, token: $token, platform: $platform) { return_msg search_msg { msg icon color_bg color_bg_icon station_from { id name } station_to { id name } } return_code date timestamp connections { origin { id name type translations { locale name } } destination { id name type translations { locale name } } departure departure_time { date timezone_type timezone } arrival arrival_time { date timezone_type timezone } origin_country destination_country traveltime totaltime distance lines { line_id origin destination departure arrival departure_time { date timezone_type timezone } arrival_time { date timezone_type timezone } distance type ride_id carrier_id line_stops { station { name_master country name translations { locale name } } } services { count capacity price service_id } info { facility { class_id values } delay { delay last_seen ride_id } notice { header message type type_id from to show_date } } classes { id short name kontent_hashtag } class_info { record_id capacity max_capacity standing occupied total basictotal groupTotal guaranted co2 cashback optimized is_promo rates { record_id price basicprice groupPrice count } passengers } line_obj { short name type carrier_id carrier { id name label } transport_type info { facilities { class_id values } name_required } } scheme } transfers { id distance time type subtype station_from { id name } station_to { id name } line_from line_to area { short name country timezone } } classes { id short name } class_info { record_id capacity max_capacity standing total basictotal groupTotal guaranted co2 cashback optimized is_promo rates { price basicprice groupPrice count } passengers } top_combination { total basictotal lines { line class_id short name } } msg currency hash d2d_info { dropoff pickup } } error { code message } } }'
               variables:
                 date: '08.08.2026'
                 from: '8010366'
@@ -1139,7 +1139,7 @@ paths:
       summary: Create Order
       operationId: processOrder
       description: |-
-        Creates a new order from a connection hash returned by `searchConnections`.
+        Creates a new order from a connection hash returned by `searchResults`.
         The response includes `order_code` and `digest` (base64 token) needed for subsequent
         booking operations (seat selection, payment methods, finalization).
 
@@ -1156,7 +1156,7 @@ paths:
               properties:
                 hash:
                   type: string
-                  description: Connection hash from searchConnections response
+                  description: Connection hash from searchResults response
                   example: c36bc540e222639be02de0ab08344c1f
                 group:
                   type: string
@@ -3454,6 +3454,10 @@ components:
             - ŤZP/ŤZP-S (Slovak): 0% fare discount, but 25% cashback in Leo Credits (Economy, entire route).
             - Wheelchair transported free of charge.
             - Companion OR assistance dog, not both simultaneously.
+            - Interrail/Eurail: 100% discount (price 0€), reservation mandatory, trains only.
+              As of 2026-09-07: interraileco returns Economy only; interrailbus returns Business only.
+              Economy Sleeper + Sleeper Lady were bookable with interraileco at 0€ until ~2026-08-18,
+              then locked for Interrail (verified live: night train Weimar-Przemysl 12.09. returns only ECO for interraileco).
           items:
             type: string
             enum: [isic, interrailbus, interraileco, handicap3, wheel, ztpwheelp, ztpandp, ztpanddog, wheelsk, tzp, tzpwheelp, tzpandp]

@@ -1,7 +1,7 @@
 # Leo Express API
 
 ## Endpoints
-- GraphQL: `POST https://graph.leoexpress.com/le` (introspection enabled, 158 types)
+- GraphQL: `POST https://graph.leoexpress.com/le` (introspection enabled, 169 types as of 2026-09-07)
 - REST: `https://www.leoexpress.com/api/*` (session-based, requires browser cookies)
 
 ## Authentication
@@ -14,10 +14,10 @@ No deep-link support. The booking UI is a single-page application (Nuxt/Vue). No
 
 ## Key Operations (GraphQL)
 
-### searchConnections
+### searchResults
 Search trains between two stations with pricing per class.
 ```json
-{"operationName": "searchConnections", "variables": {"from": "8002041", "to": "5100234", "date": "08.08.2026", "persons": [{"name": "adult", "cards": []}], "services": [], "locale": "de", "currency": "EUR", "platform": "website"}}
+{"operationName": "searchResults", "variables": {"from": "8002041", "to": "5100234", "date": "08.08.2026", "persons": [{"name": "adult", "cards": []}], "services": [], "locale": "de", "currency": "EUR", "platform": "website"}}
 ```
 Returns connections with `hash` (used to create order), multi-class pricing, stops, and transfer info.
 
@@ -150,9 +150,9 @@ Carrier: Leo Express (id:1)
 Schedule:
 - Frankfurt Süd 15:03 → Przemyśl 11:25 (+1)
 - Przemyśl 12:04 → Frankfurt Süd 07:22 (+1)
-- From Sep 21, 2026 (Mon–Fri): extends to/from Frankfurt Flughafen Fernbf (dep 14:39 / arr 07:53)
+- From Sep 21, 2026 (Mon–Fri): additional stop Frankfurt Flughafen Fernbf (dep 14:39 / arr 07:53). Same train, same route — one extra halt before/after Frankfurt Süd.
 
-The full route Frankfurt–Przemyśl is operational since early August 2026 (previously truncated at the Czech-Polish border in Bohumín). The Polish section (Bohumín → Przemyśl) follows separate timetable periods. Polish timetable changes on Aug 30 — stops beyond Bohumín may change.
+The full route Frankfurt–Przemyśl is operational since early August 2026 (previously truncated at the Czech-Polish border in Bohumín). The Polish section (Bohumín → Przemyśl) follows separate timetable periods. Polish timetable changes on Aug 30 — stops beyond Bohumín may change. Data for post-Aug 30 Polish stops has been in the Leo Express API since Aug 15 and is captured by the scraper.
 
 Sleeper cars debut July 31, 2026. Searching earlier dates still shows sleeper availability but assigns July 31 departure.
 
@@ -269,10 +269,12 @@ Lux Express Baltic routes (EL-204xx), Leo Express buses (LEB9xxxx).
 - 2. Kl Pass → Economy
 - 1. Kl Pass → Economy Plus + Business
 
-**API-Verhalten (Stand Juli 2026):**
-- `interraileco` gibt Economy + Sleeper + Sleeper Lady zurück (0€) — Sleeper vermutlich unbeabsichtigt (LE235 ist neu)
+**API-Verhalten (Stand 2026-09-07):**
+- `interraileco` gibt nur Economy zurück (0€) — Sleeper/Sleeper Lady seit ~18.08.2026 für Interrail gesperrt
 - `interrailbus` gibt nur Business zurück (0€)
 - 1. Kl Passinhaber können auch `interraileco` nutzen (freiwilliges Downgrade in niedrigere Klasse)
+
+**Historie:** Bis ~18.08.2026 gab `interraileco` zusätzlich Economy Sleeper + Sleeper Lady zu 0€ zurück (LE235 war neu). Diese Sleeper-Reservierung per Interrail wurde ohne öffentliche Kommunikation gesperrt.
 
 ### Economy GO (Stehplatz)
 - Verfügbar wenn alle Sitzplätze ausverkauft (oder als Kombination Stehen+Sitzen)
@@ -284,7 +286,7 @@ Lux Express Baltic routes (EL-204xx), Leo Express buses (LEB9xxxx).
 - Kein Catering-Service während Stehplatzabschnitt
 
 ## Booking Flow (GraphQL, preferred)
-1. `searchConnections` → hash per connection
+1. `searchResults` → hash per connection
 2. `createOrder` mutation (hash + classCombination) → order_code + digest + tickets with seats
 3. `carsWithFreeSeats` (ticket_id) → seat map (SVG + free seats)
 4. `changeSeat` mutation → assign specific seat
@@ -309,7 +311,7 @@ Script: `leo-availability.py`
 ```
 python leo-availability.py [from] [to] [month] [year] [--days N] [--json] [--diff]
 ```
-Defaults: Frankfurt Süd → Przemyśl Główny, current month. Uses `searchConnections` per day, shows capacity + price per class. `--json` saves for change detection, `--diff` highlights price/capacity changes.
+Defaults: Frankfurt Süd → Przemyśl Główny, current month. Uses `searchResults` per day, shows capacity + price per class. `--json` saves for change detection, `--diff` highlights price/capacity changes.
 
 ## Carriers
 | ID | Name |
