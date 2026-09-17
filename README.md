@@ -103,6 +103,16 @@ Booking API for [srbvoz.rs eKarta](https://webapi1.srbvoz.rs/ekarta/app/) (Serbi
 - Account endpoints: order history (`GetPagedOrders`), profile (`korisnik`), completed-order lookup (`zavrsena`), e-mail-verified password reset
 - Per-endpoint date-format quirks (YYYY-M-D / D-M-YYYY / M-D-YYYY / DD-MM-YYYY)
 
+### ZPCG (`zpcg-api.yaml`)
+API for [zpcg.me](https://www.zpcg.me) (Montenegro Railways), the Montenegro-side counterpart to Srbija Voz on the shared Belgrade–Bar line, including:
+- Public, CORS-enabled REST API (`api.zpcg.me`, no auth) for timetable and pricing, plus the `tickets-zpcg.me` booking front end
+- Stops carry `external_country_id` (62 ME, 72 RS) and `external_stop_id`, linking each station to its Srbija Voz `sifra` (Bar 31080, Podgorica 31001, Beograd Centar 16050)
+- Direct-train search by station name; night train 432/433 "Lovćen" (international) plus local trains (Bar↔Podgorica↔Bijelo Polje, Virpazar↔Bar)
+- Base fares (1st/2nd class, EUR) per relation; accommodation (Postelja/Ležaj beds 8–48€, identical to the Serbian reservation fees) and concessions (K-15 student, K-5 journalist, EURO<26/ISIC ~50%, child 6–14 50%, dogs 50%)
+- Cart quote via `purchase-api.php`; payment via Monri IPG redirect (Visa/Mastercard/Maestro/Diners/Discover)
+- EUR throughout (Montenegro uses the euro); dates `YYYY-MM-DD` on every endpoint
+- Trilingual station names (Montenegrin Latin, English, Cyrillic)
+
 ## Usage
 
 If you're using Google Chrome, it will block all requests from SwaggerUI by default. To circumvent this, you can create a new shortcut to Google Chrome and append the following parameters: `--disable-web-security -user-data-dir=~` (note: single dash in front of `user-data-dir`). The directory for `user-data-dir` is not important, but it needs to exist on the local file system.

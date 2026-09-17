@@ -1,0 +1,353 @@
+openapi: 3.0.0
+info:
+  title: ZPCG (Montenegro Railways) API
+  version: 1.0.0
+  description: |-
+    Reverse-engineered API of the Montenegrin Railways passenger operator [Zeljeznicki prevoz Crne Gore](https://www.zpcg.me) (ZPCG). Covers the Bar to Belgrade line and the Montenegrin local network.
+
+    Two systems are documented:
+
+    - **api.zpcg.me**: a public, CORS-enabled REST/JSON API (no auth) that powers timetable and price lookup on www.zpcg.me. Stops, routes, per-relation prices and the accommodation/concession catalogue.
+    - **tickets-zpcg.me**: the PHP booking front end. `api-proxy.php` mirrors the REST search, `purchase-api.php` prices a cart (quote), and payment is handed off to the Monri IPG (ipg.monri.com) card gateway.
+
+    The night train 432/433 "Lovcen" Bar to Belgrade is the cross-border example; the network is otherwise served by local trains (Bar to Podgorica to Bijelo Polje, Bar to Virpazar).
+
+    ## Conventions
+
+    - **Dates**: `YYYY-MM-DD` on every endpoint.
+    - **Currency**: EUR throughout (Montenegro uses the euro). `Class1Price`/`Class2Price` are 1st/2nd class base fares.
+    - **Languages**: names come in `Name_me` (Montenegrin Latin), `Name_en` (English) and `Name_me_cyr` (Cyrillic).
+    - **Cross-border stations**: each stop carries `external_country_id` (62 = Montenegro, 72 = Serbia) and `external_stop_id`. Foreign (Serbian) stops on the Bar to Belgrade line appear with `local: 0`; `external_stop_id` is the station code shared with the Serbian side of the line.
+
+servers:
+  - url: https://api.zpcg.me
+    description: Public REST API (timetable and pricing)
+  - url: https://tickets-zpcg.me
+    description: Booking front end (proxy, quote, payment)
+
+tags:
+  - name: Stations
+    description: Stop master data
+  - name: Search
+    description: Route and connection search
+  - name: Pricing
+    description: Fares, accommodation and concessions
+  - name: Purchase
+    description: Cart quote and payment
+
+paths:
+  /api/stops:
+    get:
+      tags: [Stations]
+      summary: List all stops
+      description: |-
+        Full stop master data (~75 stops). Each carries GPS and `external_country_id` / `external_stop_id`. `local: 1` = on the ZPCG network, `local: 0` = a foreign (Serbian) through-stop on the Bar to Belgrade line (with `external_country_id: 72`). `StopTypeID`: 1 = stanica (station), 2 = stajaliste (halt), 3 = ukrsnica (crossing), 4 = glavna stanica (main station).
+      responses:
+        '200':
+          description: Array of stops
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Stop'
+  /api/routes:
+    get:
+      tags: [Search]
+      summary: Search direct connections
+      description: |-
+        Direct trains between two stations on a date. `start`/`finish` are station **names** (`Name_en`, `Name_me` or Cyrillic `Name_me_cyr`), not IDs. Returns the base fare (`price`) plus a `direct[]` array of trains, each with its full stop list (`timetable_items`). `connected` is present but the system serves direct trains only. `International: 1` marks the cross-border 432/433; `TrainTypeID` 1 = international, 3 = local.
+
+        Verified edge cases: an unknown station name returns HTTP 404 (HTML error page); `start == finish` returns `{"price":null,"direct":[],"connected":[]}`; a missing `date` defaults to today; a malformed date (e.g. `DD-MM-YYYY`) keeps `price` but returns an empty `direct[]`; a foreign through-stop of the 432/433 (Serbian side, `local: 0`) is accepted as `start`/`finish`. Past dates still resolve (historic timetable).
+      parameters:
+        - { name: start, in: query, required: true, schema: { type: string }, example: Bar }
+        - { name: finish, in: query, required: true, schema: { type: string }, example: Podgorica }
+        - { name: date, in: query, required: true, schema: { type: string, format: date }, example: '2026-09-20' }
+      responses:
+        '200':
+          description: Search result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteSearchResult'
+  /api/routes/cumulative:
+    get:
+      tags: [Search]
+      summary: Full origin/destination matrix
+      description: |-
+        Complete nested price and timetable matrix for every bookable relation, keyed `{ startName: { finishName: { price, direct[] } } }`. Large response (~1 MB). Used to pre-load the whole network on the site.
+
+        `type` filters the matrix (verified live): `type=international` returns only the cross-border 432/433 (~105 KB); `type=local` returns only the domestic 6xxx/7xxx trains (~929 KB); `type=null` or any other value returns the full matrix.
+      parameters:
+        - { name: type, in: query, required: false, schema: { type: string, enum: ['null', international, local] }, example: 'null' }
+      responses:
+        '200':
+          description: Nested relation matrix
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/stop/prices/{stopId}:
+    get:
+      tags: [Pricing]
+      summary: Fare matrix from a stop
+      description: |-
+        Base 1st/2nd class fares (EUR) from `stopId` to every reachable destination. `connected` is always empty (direct relations only).
+      parameters:
+        - { name: stopId, in: path, required: true, schema: { type: integer }, example: 1 }
+      responses:
+        '200':
+          description: Price list from the stop
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  direct:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Price'
+                  connected:
+                    type: array
+                    items: {}
+  /api/route/prices/{routeId}:
+    get:
+      tags: [Pricing]
+      summary: Accommodation and concessions for a route
+      description: |-
+        Add-on catalogue for a `RouteID`, grouped by `PriceGroupID`. Group 3 (Lezajevi / Beds) carries a numeric `Amount` in EUR; group 2 (Povlastice / Travel Concessions) carries only descriptive text (`Amount: null`).
+
+        Berths (group 3):
+
+        | Description | Compartment | EUR |
+        |-------------|-------------|-----|
+        | Postelja WL Single | 1 person | 48 |
+        | Postelja WL Double | 2 person | 24 |
+        | Postelja WL Turist | 3 person | 16 |
+        | Lezaj Ac | 4 person | 12 |
+        | Lezaj Bc | 6 person | 8 |
+
+        Concessions (group 2, descriptive): K-15 student/pupil (card 3 EUR, valid for the school year), K-5 journalist (5 EUR, 2 years), K-5a (1 EUR); EURO<26 / ISIC / ITIC / IYTC / ETC approx 50 %; child under 6 free when accompanied by a fare-paying passenger; child 6 to 14 at 50 %; small dogs at 50 %.
+      parameters:
+        - { name: routeId, in: path, required: true, schema: { type: integer }, example: 94 }
+      responses:
+        '200':
+          description: Grouped price add-ons
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  direct:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/PriceGroupItem'
+  /api-proxy.php:
+    get:
+      tags: [Search]
+      summary: Booking-side search proxy
+      description: |-
+        Server-side proxy on the booking host that mirrors the public REST API (avoids CORS in the checkout flow). `action=routes` mirrors `/api/routes`; `action=stop-prices&from={stopId}` mirrors `/api/stop/prices/{stopId}`.
+      parameters:
+        - { name: action, in: query, required: true, schema: { type: string, enum: [routes, stop-prices] }, example: routes }
+        - { name: start, in: query, required: false, schema: { type: string }, example: Bar }
+        - { name: finish, in: query, required: false, schema: { type: string }, example: Beograd Centar }
+        - { name: date, in: query, required: false, schema: { type: string, format: date }, example: '2026-09-17' }
+        - { name: from, in: query, required: false, schema: { type: integer }, description: 'stopId, for action=stop-prices', example: 1 }
+      responses:
+        '200':
+          description: Mirrored REST response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /purchase-api.php:
+    post:
+      tags: [Purchase]
+      summary: Price a cart (quote)
+      description: |-
+        Prices a one-way or return cart before payment. `legs[]` holds one entry per direction (`timetableId` from the search, `fromId`/`toId` are `StopID`s, `date` `YYYY-MM-DD`). `class` is 1 or 2. `resType` `none` (with `berthType: null`) prices a plain seat; `resType` `berth` requires a `berthType` and adds the accommodation fee. The response echoes each leg with train and times and itemises the fare in EUR. Payment then redirects to the Monri IPG gateway; only the `quote` action is verified (other actions return HTTP 400 `{"error":"Nepoznata akcija."}`).
+
+        `berthType` is a numeric selector, not the `PriceID` from `/api/route/prices`. Accommodation and the class it requires (verified live on the 432/433):
+
+        | berthType | Accommodation | Fee EUR | Class |
+        |-----------|---------------|---------|-------|
+        | 1 | Postelja Single (1 person) | 48 | 1st only |
+        | 2 | Postelja Double (2 person) | 24 | 1st or 2nd |
+        | 3 | Postelja Tourist (3 person) | 16 | 1st or 2nd |
+        | 4 | Kuset AC (4-berth couchette) | 12 | 2nd only |
+        | 6 | Kuset BC (6-berth couchette) | 8 | 2nd only |
+
+        `berthType` 5 and 0 are rejected (`"Izaberi tip kabine za ležaj."`). A class mismatch is rejected too: Single needs 1st class, any Kuset needs 2nd class (`"Kušet se prodaje samo uz kartu 2. razreda"`).
+
+        `?lang=en` switches response labels to English (`Outbound`/`Adults`); the default and the `Accept-Language` header both yield Montenegrin (`Odlazak`/`Odrasli`).
+
+        Online sale for the international night train can be suspended per train and date, returning `{"error":"Online prodaja za voz <nr> dana <date> je obustavljena, karte se kupuju na šalteru."}` (buy at the counter). The suspension window is direction-specific and rolls forward day by day.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+      responses:
+        '200':
+          description: Priced quote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteResponse'
+
+components:
+  schemas:
+    StopType:
+      type: object
+      properties:
+        StopTypeID: { type: integer, example: 4 }
+        Name_me: { type: string, example: glavna stanica }
+        Name_en: { type: string, example: main station }
+    Stop:
+      type: object
+      properties:
+        StopID: { type: integer, example: 1 }
+        Name_me: { type: string, example: Bar }
+        Name_en: { type: string, example: Bar }
+        Name_me_cyr: { type: string, example: Бар }
+        StopTypeID: { type: integer, example: 4 }
+        Latitude: { type: number, nullable: true, example: 42.087639 }
+        Longitude: { type: number, nullable: true, example: 19.105217 }
+        local: { type: integer, enum: [0, 1], example: 1, description: '1 = ZPCG network, 0 = foreign through-stop' }
+        external_country_id: { type: integer, example: 62, description: '62 = Montenegro, 72 = Serbia' }
+        external_stop_id: { type: integer, example: 31080, description: 'Cross-border station code, shared with the Serbian side of the line' }
+        stop_type:
+          $ref: '#/components/schemas/StopType'
+    Price:
+      type: object
+      properties:
+        PricelistID: { type: integer, example: 548 }
+        StopFromID: { type: integer, example: 31 }
+        StopToID: { type: integer, example: 1 }
+        Class1Price: { type: number, example: 35.6 }
+        Class2Price: { type: number, example: 23.8 }
+    RouteStop:
+      type: object
+      properties:
+        RouteStopID: { type: integer, example: 1173 }
+        Order: { type: integer, example: 10 }
+        StopID: { type: integer, example: 1 }
+        stop:
+          $ref: '#/components/schemas/Stop'
+    TimetableItem:
+      type: object
+      properties:
+        TimetableItemID: { type: integer, example: 3208 }
+        TimetableID: { type: integer, example: 236 }
+        RouteStopID: { type: integer, example: 1173 }
+        ArrivalTime: { type: string, nullable: true, example: null }
+        DepartureTime: { type: string, nullable: true, example: '20:10:43' }
+        routestop:
+          $ref: '#/components/schemas/RouteStop'
+    DirectTrain:
+      type: object
+      properties:
+        TimetableID: { type: integer, example: 236 }
+        RouteID: { type: integer, example: 95 }
+        TrainNumber: { type: string, example: '432' }
+        TrainTypeID: { type: integer, example: 1, description: '1 = international, 3 = local' }
+        International: { type: integer, enum: [0, 1], example: 1 }
+        timetable_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimetableItem'
+    RouteSearchResult:
+      type: object
+      properties:
+        price:
+          $ref: '#/components/schemas/Price'
+        direct:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectTrain'
+        connected:
+          type: array
+          items: {}
+    PriceGroup:
+      type: object
+      properties:
+        PriceGroupID: { type: integer, example: 3 }
+        Name_me: { type: string, example: Lezajevi }
+        Name_en: { type: string, example: Beds }
+        Order: { type: integer, example: 30 }
+    PriceGroupItem:
+      type: object
+      properties:
+        PriceID: { type: integer, example: 4 }
+        PriceGroupID: { type: integer, example: 3, description: '2 = concessions (Amount null), 3 = beds (Amount in EUR)' }
+        Amount: { type: number, nullable: true, example: 48 }
+        Description_me: { type: string, example: 'Postelja u WL kolima - Singl (odjeljak za jednu osobu)' }
+        Description_en: { type: string, example: 'A bed in the WL car - Single (one person compartment)' }
+        Description_me_cyr: { type: string, example: '' }
+        price_group:
+          $ref: '#/components/schemas/PriceGroup'
+    QuoteLeg:
+      type: object
+      required: [timetableId, fromId, toId, date]
+      properties:
+        timetableId: { type: integer, example: 172 }
+        fromId: { type: integer, example: 1 }
+        toId: { type: integer, example: 22 }
+        date: { type: string, format: date, example: '2026-09-17' }
+    QuoteRequest:
+      type: object
+      required: [action, legs, class, adults]
+      properties:
+        action: { type: string, enum: [quote], example: quote }
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuoteLeg'
+        class: { type: integer, enum: [1, 2], example: 2 }
+        adults: { type: integer, example: 1 }
+        children: { type: integer, example: 0 }
+        childAges:
+          type: array
+          items: { type: integer }
+          example: []
+        resType: { type: string, nullable: true, enum: [none, berth], example: none, description: 'none = plain seat (berthType null), berth = sleeper/couchette (berthType required)' }
+        berthType: { type: string, nullable: true, enum: ['1', '2', '3', '4', '6'], example: null, description: '1 Postelja Single, 2 Double, 3 Tourist, 4 Kuset AC (4-berth), 6 Kuset BC (6-berth). Single needs 1st class; Kuset needs 2nd class.' }
+    QuoteLegResult:
+      type: object
+      properties:
+        leg: { type: integer, example: 1 }
+        legLabel: { type: string, example: Outbound }
+        trainNumber: { type: string, example: '6102' }
+        date: { type: string, format: date, example: '2026-09-17' }
+        fromName: { type: string, example: Bar }
+        toName: { type: string, example: Bijelo Polje }
+        dep: { type: string, example: '16:35' }
+        arr: { type: string, example: '19:56' }
+    QuoteItem:
+      type: object
+      properties:
+        legLabel: { type: string, example: Outbound }
+        typeLabel: { type: string, example: Adults }
+        qty: { type: integer, example: 1 }
+        unitEur: { type: string, example: '7.20' }
+        totalEur: { type: string, example: '7.20' }
+    QuoteResponse:
+      type: object
+      properties:
+        class: { type: integer, example: 2 }
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuoteLegResult'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuoteItem'
+        totalEur: { type: string, example: '14.40' }
+        currency: { type: string, example: EUR }
