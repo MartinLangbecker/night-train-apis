@@ -31,8 +31,12 @@ The response contains two arrays per connection: `class_info` and `classes`. The
 class_info[n].record_id == classes[m].id
 ```
 
-- `class_info[]`: pricing data (price, capacity, standing flag, conditions)
+- `class_info[]`: pricing data — `record_id` (= the class id as a string), `total`
+  (total price for the whole request, all passengers), `basictotal`, `capacity`,
+  `max_capacity`, `occupied`, `passengers`, `standing`, `is_promo`, `cashback`, `co2`
 - `classes[]`: class metadata (id, name, short code, vehicle type)
+
+`record_id` equals the corresponding `classes[].id` (both strings, e.g. `"7"`).
 
 Without this join, prices get assigned to the wrong class.
 
@@ -119,6 +123,99 @@ Validate a promo/discount code. Returns discount %, remaining uses, expiry date,
 {"query": "query { checkSalecodeRemains(salecode: \"CODE\", locale: \"de\") { salecode { code mode sale remain currency expiration_at conditions { class_id multiple wholeorder cumulative } } error { code message } } }"}
 ```
 Error 1060 = "Neplatný slevový kód" (invalid code). Historical codes (LEO10, ZDARMA, etc.) are all expired.
+
+**Does not recognise 1+50% promos (e.g. `LE50`)** — `checkSalecodeRemains` returns
+error 1060 for `one_plus_one`/`wholeorder` codes even while they are active. Those
+codes are only applied via the `applySalecode` mutation (or the REST endpoint),
+never validated here. Use `checkSalecodeRemains` only for standard per-ticket
+discount codes.
+
+### applySalecode (GraphQL — apply code to an order)
+
+`checkSalecodeRemains` only validates a code. To attach it to a booking, use the
+`applySalecode` mutation with the `order_code` from `createOrder` (no browser
+session needed):
+
+```json
+{"operationName": "applySalecode",
+ "variables": {"salecode": "LE50", "order_code": "261640112255792", "locale": "de", "platform": "website"},
+ "query": "mutation applySalecode($salecode:String,$order_code:String,$locale:String,$platform:String){ applySalecode(salecode:$salecode, order_code:$order_code, locale:$locale, platform:$platform){ __typename } }"}
+```
+
+Returns `AddSaleCodeResponse`. Verified live (2× Economy Sleeper, weimar–przemyśl
+22.10.): order 301.62€ → 226.22€, `sales[]` = LE50 75.4€. `removeSalecode`
+(`order_code` + `sale_id`) reverses it. `createOrder`'s `OrderInput` has no salecode
+field, so the discount is a separate mutation, not part of order creation.
+
+After applying, the discount also appears in `orderData` / `GET /api/order/retrieve`
+under `order.sales[]` (type `salecode`) and per item in `order_items[].price_info[]`
+(key = the code). The `salecode.conditions.class_id` array lists the eligible
+travel classes.
+
+### /api/salecode/apply (REST — web frontend alternative)
+
+The web frontend applies the code via a session-based REST call instead (order
+resolved from the browser session, not `order_code`):
+
+```
+POST https://www.leoexpress.com/api/salecode/apply
+Content-Type: multipart/form-data
+
+salecode=LE50
+locale=de
+```
+
+Without an active session order it returns error **1014 "Neplatný identifikátor
+objednávky"** (the order is checked before the code). Prefer the `applySalecode`
+mutation for programmatic use.
+
+Response:
+```json
+{
+  "error": null,
+  "success": true,
+  "salecodes": [{"id": "...", "amount": 92.5, "code": "LE50", "codeId": "24h"}],
+  "discounts": [{"item_code": "<order_item_code>", "discount": 92.5, "__typename": "SaleCodeDiscount"}]
+}
+```
+
+The discount then shows up in `GET /api/order/retrieve?locale=de` under
+`order.sales[]` (type `salecode`) and per item in `order_items[].price_info[]`
+(key = the code, e.g. `LE50`). The `salecode.conditions.class_id` array lists
+which travel classes the code is valid for.
+
+**LE50 — "1+50%" promo (verified 2026-09-15):**
+- 50% off every second ticket (even ticket count, same connection/date/time; discount applied to the cheaper ticket on tariff mix)
+- `conditions.class_id: [8, 7, 3]` → **Economy (3), Economy Sleeper (7), Economy Sleeper Lady (8)** — Sleeper variants ARE eligible, despite marketing emphasising "Economy"
+- Flags: `one_plus_one: true`, `wholeorder: true`, `transfer: true`, `storno24: true` (cancellable up to 24h before departure), `code_id: "24h"`
+- Sale window 14.–18.09.2026, travel until 12.12.2026, `deleted_at: 2026-09-21`
+- Tickets can only be cancelled as a pair
+
+**Verified live on Economy Sleeper (class 7), 9-ticket cart, weimar–przemyśl 2026-10-22:**
+- Before: 9 × 125.8€ = 1132.20€. After `apply`: 880.60€.
+- The API pairs tickets: `floor(n/2)` pairs get the discount, an odd leftover ticket
+  stays full price. Here: 4 discounted pairs + 1 full ticket.
+- Per pair the discount is 50% of ONE ticket: `base` 251.6€ (= 2 × 125.8) − `LE50`
+  62.9€ = 188.7€ effective (62.9 = 125.8 / 2). Total discount 4 × 62.9 = 251.6€.
+- After applying, `order_items` collapse to one item per pair (`base` = pair price)
+  plus one item for the unpaired ticket; `order.sales[]` lists one entry per pair.
+- Sleeper discount is therefore real, not just theoretical from `class_id`.
+- `apply` may transiently return **HTTP 503** (Heroku "Application Error") — retry once.
+
+**Tariff mix, verified live (Economy Sleeper / Sleeper Lady, weimar–przemyśl):**
+- The discount always applies to the **cheapest ticket by net price** (after tariff
+  reductions), per pair. Adult 150.8€ + child ("Kind 0–5 Jahre") 42.8€ → LE50 = 50%
+  of 42.8€ = **21.4€** (the child, not the adult).
+- With ≥2 passengers the API forms `floor(n/2)` pairs and applies one LE50 per pair.
+  4-person cart (adult + student + child + child6) → 2 pairs: LE50 = 88.7€ on the
+  (adult+student) pair and 32.1€ on the (child+child6) pair; each pair discounts its
+  cheapest net ticket.
+- After `apply`, each pair collapses into one `order_item` holding both `tickets`
+  (each with a `rate` label) plus a layered, **per-country** `price_info[]`
+  (`base` + reduction keys split by `country: de|cz|pl` + `LE50`). See "Passenger
+  Types → Per-Country Fare Reductions" for the full breakdown.
+- Child fare in Sleeper is ~28% of adult (larger reduction than 50%), because CZ
+  grants children 100% (free) on its leg.
 
 ### carsWithFreeSeats
 Seat map with car layout (base64 SVG) and free seat list per class.
@@ -231,6 +328,31 @@ Lux Express Baltic routes (EL-204xx), Leo Express buses (LEB9xxxx).
 
 ## Passenger Types
 `adult`, `child`, `pram`, `child6`, `student`, `senior`
+
+Search `persons[].name` values map to these `order_items[].tickets[].rate` labels
+(verified live, weimar–przemyśl Sleeper Lady, class 8):
+
+| `persons.name` | `rate` label | Notes |
+|----------------|--------------|-------|
+| `adult` | Erwachsener | full fare |
+| `child` | Kind 0–5 Jahre | free in CZ (100%), 50% in DE/PL |
+| `child6` | Junior 6–17 Jahre | 25% DE/PL, 50% CZ |
+| `student` | Student 18–25 Jahre | 50% (CZ segment shown) |
+
+### Per-Country Fare Reductions (price_info breakdown)
+
+Because the route crosses DE→CZ→PL, tariff reductions are **split per country** in
+`order_items[].price_info[]`: one entry per (reduction key, country), each with its
+own `discount` percent and `price` (the reduction amount for that leg). Keys seen:
+`base` (full fare, no country), `child`/`child6`/`student` (per `country: de|cz|pl`),
+and the voucher key `LE50`. The item `price` = `base` − Σ(reductions) − `LE50`.
+
+Example (pair Kind 0–5 + Junior 6–17, base 452.4€):
+- `child` de 25.6 (50%), cz 97.9 (100%), pl 38.5 (50%) → 162.0€ total child reduction
+- `child6` de 12.8 (25%), cz 49 (50%), pl 19.3 (25%) → 81.1€ total
+- `LE50` 32.1 → final 177.3€
+
+CZ grants children 100% (free); the CZ leg is the largest single reduction.
 
 ## Discount Cards
 `cards` array in person object. Known codes:

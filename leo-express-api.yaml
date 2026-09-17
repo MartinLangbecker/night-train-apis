@@ -984,6 +984,53 @@ paths:
                             type: boolean
                           error:
                             $ref: '#/components/schemas/Error'
+  /le#applySalecode:
+    post:
+      tags:
+        - Booking
+      summary: Apply Discount Code (GraphQL)
+      operationId: applySalecode
+      description: |-
+        Attaches a promo/discount code to an order via `order_code` (from `createOrder`); no
+        browser session required. `checkSalecodeRemains` only validates codes and rejects 1+50%
+        promos (error 1060), and `OrderInput` has no salecode field, so this mutation is the
+        programmatic way to apply a code. `removeSalecode` (`order_code` + `sale_id`) reverses it.
+        After applying, the discount shows in `orderData` under `order.sales[]` and per item in
+        `order_items[].price_info[]`.
+      parameters:
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            example:
+              query: 'mutation applySalecode($salecode: String, $order_code: String, $locale: String, $token: String, $platform: String) { applySalecode(salecode: $salecode, order_code: $order_code, locale: $locale, token: $token, platform: $platform) { __typename } }'
+              variables:
+                salecode: LE50
+                order_code: '261640112255792'
+                locale: de
+                token: null
+                platform: null
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      applySalecode:
+                        type: object
+                        properties:
+                          __typename:
+                            type: string
+                            example: AddSaleCodeResponse
   /le#orderData:
     post:
       tags:
@@ -1188,6 +1235,112 @@ paths:
                       line: LE235
                       class_id: 3
                       class_name: Economy
+  /api/salecode/apply:
+    post:
+      tags:
+        - Booking
+      summary: Apply Discount Code to Order
+      operationId: salecodeApply
+      description: |-
+        Session-based alternative to the `applySalecode` GraphQL mutation, used by the web
+        frontend: applies a promo/discount code to the order bound to the current browser session
+        (it does not accept `order_code`/`digest`). For programmatic use prefer the
+        `applySalecode` mutation (`/le#applySalecode`), which takes the `order_code` directly.
+
+        On success the discount also appears in `GET /api/order/retrieve` under `order.sales[]`
+        and per item in `order_items[].price_info[]`. Without an active order the endpoint returns
+        error 1014; it may also return a transient HTTP 503 (retry once).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - salecode
+                - locale
+              properties:
+                salecode:
+                  type: string
+                  description: Promo/discount code to apply
+                  example: LE50
+                locale:
+                  type: string
+                  description: Language code
+                  example: de
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    nullable: true
+                    description: Error object, or null on success
+                  success:
+                    type: boolean
+                  salecodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        amount:
+                          type: number
+                          description: Discount amount in the order currency
+                        code:
+                          type: string
+                        codeId:
+                          type: string
+                          description: Code category, e.g. "24h"
+                  discounts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        item_code:
+                          type: string
+                          description: The order_item code the discount applies to
+                        discount:
+                          type: number
+                        __typename:
+                          type: string
+                          example: SaleCodeDiscount
+              examples:
+                success:
+                  summary: Code applied to an active order
+                  value:
+                    error: null
+                    success: true
+                    salecodes:
+                      - id: '7608688'
+                        amount: 92.5
+                        code: LE50
+                        codeId: 24h
+                    discounts:
+                      - item_code: '262349060176588'
+                        discount: 92.5
+                        __typename: SaleCodeDiscount
+                noSessionOrder:
+                  summary: No active session-bound order (error 1014)
+                  value:
+                    error:
+                      code: '1014'
+                      message: Neplatný identifikátor objednávky
+                      __typename: Error
+                    success: false
+                    salecodes: []
+                    discounts: null
+        '503':
+          description: |-
+            Transient Heroku "Application Error" (HTML body); retry once.
+          content:
+            text/html:
+              schema:
+                type: string
   /api/seats/change:
     post:
       tags:
