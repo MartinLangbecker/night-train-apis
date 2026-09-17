@@ -1,0 +1,743 @@
+openapi: 3.0.0
+info:
+  title: Srbija Voz eKarta API
+  version: 1.0.0
+  description: |-
+    Booking API for [srbvoz.rs eKarta](https://webapi1.srbvoz.rs/ekarta/app/), the Serbian Railways (Srbija Voz) online ticketing system. Covers the whole network: domestic and international, all train categories.
+
+    REST/JSON behind an AngularJS SPA. Booking requires an account session (cookie-based, see the Auth endpoints); search, pricing and station data are open. Only **direct trains** are returned by search; there are no transfer itineraries.
+
+    ## Train categories (`rangs`)
+
+    | rangs | Category | Reservation |
+    |-------|----------|-------------|
+    | IC | InterCity (incl. SOKO high-speed, `soko: true`) | required |
+    | IR | InterRegio, long-distance and night trains | varies |
+    | Re | Regional | none (`rezervacioni_sistem: false`) |
+
+    `rezervacioni_sistem: true` marks trains bookable via the ORKA reservation endpoints. One example is the international sleeper **IR 432/433 "Lovćen" Zemun (Beograd) ↔ Bar** (seats, couchette, sleeper, car transport), used for the concrete examples in this spec. A seasonal daytime train **1131/1130 Subotica ↔ Bar** also serves Montenegro. International online sales (Montenegro trains and Subotica ↔ Szeged) went live 21 July 2026.
+
+    ## Conventions
+
+    - **Stations** are numeric `sifra` IDs from `/stanica/StaniceGetAll_MPS` (~400, `medjunarodna: 1` = international). Example international stations: Bar `106231080` and Podgorica `106231001` (Montenegro), Szeged `115517228` (Hungary). Cross-border relations split the tariff per administration (uprava `1062` ZPCG Montenegro, `1172` Srbija Voz). Štrpci `15707` sits on a short Bosnian (Republika Srpska) stretch of the Belgrade–Bar line but is listed as a domestic station (`medjunarodna: 0`), served by regular Regio trains.
+    - **Currency**: dual RSD + EUR with a fixed `KURS` (~119.6 RSD/EUR).
+    - **Dates**: the format differs per endpoint. Search `YYYY-M-D`, TCV `D-M-YYYY`, reservation `M-D-YYYY`, purchase `DD-MM-YYYY`. Match each exactly.
+    - **Session**: `cenRez`/`eTCVJson` in search results and all reservation/purchase/account endpoints require login.
+
+servers:
+  - url: https://webapi1.srbvoz.rs/eKarta/api
+
+tags:
+  - name: Auth
+    description: Session login, refresh, logout
+  - name: Account
+    description: User profile, order history, registration, password reset
+  - name: Stations
+    description: Station master data
+  - name: Search
+    description: Train / connection search
+  - name: Pricing
+    description: Tariff calculation
+  - name: Reservation
+    description: Seat and berth reservation
+  - name: Booking
+    description: Ticket purchase
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in (create session)
+      description: |-
+        Authenticates a user account. Session is maintained via an HttpOnly cookie set on the response; subsequent calls reuse it. Refresh via `/auth/refresh`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, deviceId]
+              properties:
+                username:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                deviceId:
+                  type: string
+                  format: uuid
+                  example: 00000000-0000-0000-0000-000000000000
+      responses:
+        '200':
+          description: Login OK. Sets `auth_token` + `refresh_token` HttpOnly cookies.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  username: { type: string }
+                  userId: { type: integer }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Session refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+
+  /auth/ok:
+    post:
+      tags: [Auth]
+      summary: Session heartbeat / validity check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Session valid
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out (end session)
+      description: Ends the session and clears the auth cookies.
+      responses:
+        '200':
+          description: Logged out
+
+  /user/PostUser:
+    post:
+      tags: [Account]
+      summary: Register / update user profile
+      description: Register a new account or update the profile. Request shape not fully documented.
+      responses:
+        '200':
+          description: Profile saved
+
+  /user/zaboravljena:
+    post:
+      tags: [Account]
+      summary: Forgotten-password request (v1)
+      description: Legacy forgotten-password endpoint. Superseded by `post_zaboravljenaV2`.
+      responses:
+        '200':
+          description: Reset initiated
+
+  /user/post_zaboravljenaV2:
+    post:
+      tags: [Account]
+      summary: Reset password
+      description: |-
+        Sets a new password for the account. The change is **e-mail-verified, not immediate**: the response is `{email, error, verificationRequired: true}` and a confirmation mail is sent; the new password activates only after the user confirms it. The old password is invalidated immediately. Validation: missing `username` → HTTP 400 `"Username nije prosledjen."`; missing `lozinka` → HTTP 400 `"Lozinka nije prosledjena."`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, lozinka]
+              properties:
+                username: { type: string, format: email }
+                lozinka: { type: string, format: password, description: New password }
+      responses:
+        '200':
+          description: Reset submitted; confirmation e-mail sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email: { type: string, format: email }
+                  error: { type: string, example: '' }
+                  verificationRequired: { type: boolean, example: true }
+        '400':
+          description: Missing `username` or `lozinka`
+
+  /karta/VracanjeMail:
+    post:
+      tags: [Booking]
+      summary: Ticket refund / e-mail
+      description: |-
+        Handles ticket refund / e-mail delivery (SPA `_sendmail`). Empty body returns `"bad google"` (HTTP 200), which expects a reCAPTCHA token; full request shape not traced live.
+
+        Refund policy for online tickets: cancel via "Otkaži kartu" in the account profile up to 24 h before the travel date; Srbija Voz keeps 10 % of the paid fare and refunds the rest to the original card, with an e-mail confirmation. Within 24 h the request goes via the O-5 reclamation form (Centar za kontrolu prihoda, `kontrola.prihoda@srbijavoz.rs`). No refund once the journey has started, except on railway fault. Promotional Beograd centar ↔ Novi Sad tickets are non-refundable and non-exchangeable.
+      responses:
+        '200':
+          description: Processed
+
+  /stanica/StaniceGetAll_MPS:
+    get:
+      tags: [Stations]
+      summary: List all stations
+      description: 'Full station master data. `medjunarodna: 1` = international (Montenegro) station.'
+      responses:
+        '200':
+          description: Station list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Station'
+
+  /listavozova:
+    get:
+      tags: [Search]
+      summary: Timetable validity probe
+      description: Returns the last valid timetable date for a station pair (used by the SPA to bound the date picker).
+      parameters:
+        - { name: stanicaod, in: query, required: true, schema: { type: integer }, example: 16052 }
+        - { name: stanicado, in: query, required: true, schema: { type: integer }, example: 106231080 }
+        - { name: via, in: query, required: false, schema: { type: integer }, description: Accepted but ignored, example: 1 }
+        - { name: datum, in: query, required: true, schema: { type: string }, description: 'Date as YYYY-M-D', example: '2026-9-17' }
+      responses:
+        '200':
+          description: Timetable end date (ISO datetime string)
+          content:
+            application/json:
+              schema:
+                type: string
+                example: '11/16/2026 12:00:00 AM'
+
+  /listavozova/ListaVozova_Web:
+    get:
+      tags: [Search]
+      summary: Search connections
+      description: |-
+        Returns bookable direct connections for a route/date, with prices, free places per class, and the full train route (`etTrasaVoza`). Only direct trains are returned, so a station pair with no through train yields an empty list. The `via` query parameter is accepted but ignored.
+
+        `mS_SlobodnaMesta` gives free-place counts per product:
+
+        | Field | Product | Positions |
+        |-------|---------|-----------|
+        | BROJS1 / BROJS2 | Seat 1st / 2nd class | n/a |
+        | BROJL1 | Couchette "Kušet AC" (4-berth) | lower / upper |
+        | BROJL2 | Couchette "Kušet BC" (6-berth) | lower / middle / upper |
+        | BROJPT | Sleeper "Postelja Turist" (3-berth) | lower / middle / upper |
+        | BROJPD | Sleeper "Postelja Double" | lower / upper |
+        | BROJSING | Sleeper "Postelja Single" | whole compartment |
+        | BROJA / BROJB | Accompanied car | n/a |
+
+        `kusetpostelja: 1` = couchette/sleeper offered; `praceniauto: 1` = car transport. With an active session each connection also embeds `eTCVJson` (full `TcvCena` payload) and `cenRez` (reservation-fee matrix: rows `{TIP, RAZRED, DIN, EUR, REL}`, `REL` = M international / U domestic), letting a client skip the separate `TCV/TcvCena` call.
+      parameters:
+        - { name: stanicaod, in: query, required: true, schema: { type: integer }, description: Origin station sifra, example: 106231080 }
+        - { name: stanicado, in: query, required: true, schema: { type: integer }, description: Destination station sifra, example: 16052 }
+        - { name: datum, in: query, required: true, schema: { type: string }, description: 'Travel date YYYY-M-D', example: '2026-9-17' }
+        - { name: brojputnika, in: query, required: true, schema: { type: integer }, description: Number of passengers, example: 1 }
+        - { name: razred, in: query, required: true, schema: { type: integer }, description: 'Class (1 or 2)', example: 2 }
+      responses:
+        '200':
+          description: Connection list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Connection'
+
+  /TCV/TcvCena:
+    get:
+      tags: [Pricing]
+      summary: Calculate tariff
+      description: |-
+        Tariff breakdown per administration (uprava) segment: RSD (`CENA_DINARA`) + EUR (`CENA_EURO`), exchange rate `KURS`, totals `TCV_SUM_RSD` / `TCV_SUM_EUR`. Cards are always charged in RSD; any foreign-currency figure is informational only (NBS mid rate). `VRSTA_CENE` 62 = "SET za ZPCG", 68 = "CITY STAR ZPCG" (not priced on every relation, returns `TCV_SUM = 0.0` where inapplicable). CITY STAR is the round-trip-to-Montenegro fare: the first adult pays full price, each further companion (up to 4) gets 20 %, and a child 6–14 travelling as a companion gets 50 % off the first adult's price. `mSifraPovlastice`: 1 = full fare (RVC), 51 = child 6–14 (DETE, 50 %); children under 6 travel free unless they need their own seat. Frontend-only discounts (not in the `Povlastice` list): **SRB PLUS** card (K-13, 30 % on domestic fares, one-way and return; not honoured for on-board purchase in the SOKO IC), **RAIL PLUS SV** card (K-30, 30 %), **PAS** (pet). A return ticket gets 20 % (no card needed) when the exact train number and date are given for both legs. Web/app purchases get an extra 5 % on domestic fares. Domestic tickets can be bought online from 2 months down to 3 hours before departure.
+      parameters:
+        - { name: mOD, in: query, required: true, schema: { type: integer }, example: 106231080 }
+        - { name: mDO, in: query, required: true, schema: { type: integer }, example: 16052 }
+        - { name: mVrstaIzdavanja, in: query, required: false, schema: { type: integer }, description: Issue type, example: 0 }
+        - { name: mVrstaCene, in: query, required: false, schema: { type: integer }, description: Price type (62 = SET za ZPCG), example: 62 }
+        - { name: mSifraPovlastice, in: query, required: false, schema: { type: integer }, description: Discount code, example: 0 }
+        - { name: mDatumPutovanja, in: query, required: true, schema: { type: string }, description: 'Travel date D-M-YYYY', example: '28-9-2026' }
+        - { name: mRazred, in: query, required: true, schema: { type: integer }, example: 1 }
+        - { name: mSmer, in: query, required: false, schema: { type: integer }, description: 'Direction', example: 1 }
+        - { name: mBrojPutnika, in: query, required: false, schema: { type: integer }, example: 1 }
+        - { name: mBrojDece, in: query, required: false, schema: { type: integer }, example: 0 }
+        - { name: mGodineDeteta, in: query, required: false, schema: { type: integer }, description: Child age, example: 0 }
+      responses:
+        '200':
+          description: Tariff breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TcvCena'
+
+  /OrkaRezervacijaPlan/WEB_REZ_MS:
+    post:
+      tags: [Reservation]
+      summary: Reserve seat / berth
+      description: |-
+        Reserves places on the ORKA reservation system and returns the assigned car, seat/berth, position and price. `koD_ODGOVORA: 0` = OK, `1` = failure (no assignment).
+
+        `TIPU` selects the place type, `TIP_KABINE` the sub-class (razred). Fees below are the Bar↔Zemun 2nd-class example (they mirror the `cenRez` matrix in the search result, where `TIP`=`TIPU` and `RAZRED`=`TIP_KABINE`):
+
+        | Accommodation | TIPU | TIP_KABINE | Fee |
+        |---------------|------|-----------|-----|
+        | Seat | 1 | 2 | 3 € |
+        | Kušet BC (6-berth couchette) | 2 | 2 | 8 € |
+        | Kušet AC (4-berth couchette) | 2 | 1 | 12 € |
+        | Postelja Turist (3-berth sleeper) | 3 | 3 | 16 € |
+        | Postelja Double | 3 | 2 | 24 € |
+        | Postelja Single | 3 | 1 | 48 € |
+        | Auto (car) | 4 | 1 | 40 € |
+
+        `POZICIJAU` requests a position (type-dependent; no middle option for the 4-berth couchette or sleepers, and 1/3 are swapped between couchette and sleeper):
+
+        | Value | Seat (1) | Kušet AC | Kušet BC | Postelja (3) |
+        |-------|----------|----------|----------|--------------|
+        | 0 | any | any | any | any |
+        | 1 | middle | upper | upper | lower |
+        | 2 | aisle | n/a | middle | n/a |
+        | 3 | window | lower | lower | upper |
+
+        The position is honoured when available, otherwise the next free place in the type is assigned. `POLU` = passenger gender (`M`/`Z`) for shared compartments.
+
+        **Car transport:** `TIPU: 4, TIP_KABINE: 1` (40 €, Zemun → Bar only, vehicle ≤ 1.55 m) is added to a seat booking as a second call reusing the **same `ORDER_IDU`**. Vehicle details are supplied later at `karta/post`.
+
+        **Return journey:** outbound and return legs share one `ORDER_IDU` via two calls (reversed `OD_STANICAU`/`DO_STANICAU`, different `BROJ_VOZAU`/`DAT_SAOBRACAJAU`). A return ticket gets an automatic 20 % discount.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationRequest'
+      responses:
+        '200':
+          description: Reservation result
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReservationResult'
+
+  /OrkaRezervacijaPlan/WEB_StatusZa_RezOrderTMP:
+    get:
+      tags: [Reservation]
+      summary: Reservation status (temporary order)
+      parameters:
+        - { name: OrderIdTMP, in: query, required: true, schema: { type: string }, example: SVOID84702117 }
+      responses:
+        '200':
+          description: Temporary reservation status
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReservationStatus'
+
+  /OrkaRezervacijaPlan/WEB_VratiOraRezervacijuMS:
+    get:
+      tags: [Reservation]
+      summary: Retrieve / cancel reservation
+      parameters:
+        - { name: OrderId, in: query, required: true, schema: { type: string }, example: SVOID84702117 }
+      responses:
+        '200':
+          description: Reservation retrieval / cancellation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VratiRezervaciju'
+
+  /karta/post:
+    post:
+      tags: [Booking]
+      summary: Purchase ticket
+      description: |-
+        Creates the ticket for a reservation and initiates payment via Banca Intesa redirect. `ETKARTADATA` is a JSON-stringified payload with passengers and the full connection snapshot. The ticket PDF is e-mailed to the account address.
+
+        Fulfillment (international Montenegro trains 432/433 and 1131/1130): seat tickets and seat reservations may be shown from the app or as an A4 PDF, but sleeper (postelja), couchette (kušet) and car-transport tickets **must be printed on A4** and shown to staff before boarding, otherwise the passenger counts as travelling without a valid ticket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KartaPostRequest'
+      responses:
+        '200':
+          description: Purchase result (or duplicate/error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KartaPostResponse'
+
+  /user/GetPagedOrders:
+    get:
+      tags: [Booking]
+      summary: Order history (paged)
+      description: Returns the account's past orders, paginated. Each order is a full snapshot including the `placena` payment status and the stringified `etkartadata`.
+      parameters:
+        - { name: ID_USER, in: query, required: true, schema: { type: integer }, example: 83996 }
+        - { name: pageNumber, in: query, required: true, schema: { type: integer }, example: 1 }
+        - { name: pageSize, in: query, required: true, schema: { type: integer }, example: 10 }
+      responses:
+        '200':
+          description: Paged order list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedOrders'
+
+  /user/korisnik:
+    get:
+      tags: [Account]
+      summary: Get user profile
+      description: Returns the account profile (array with one object). `lozinka` is always null (the password is never returned).
+      parameters:
+        - { name: iduser, in: query, required: true, schema: { type: integer }, example: 83996 }
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserProfile'
+
+  /zavrsena:
+    get:
+      tags: [Booking]
+      summary: Completed-order / ticket lookup
+      description: Fetches a completed order by its `oid`. Returns HTTP 500 for orders that were never successfully paid (e.g. `placena` carries an error code like 9013 rather than a paid status).
+      parameters:
+        - { name: oid, in: query, required: true, schema: { type: string }, example: SVOID14205800 }
+      responses:
+        '200':
+          description: Completed order
+        '500':
+          description: Order not completed / not paid
+
+components:
+  schemas:
+    Station:
+      type: object
+      properties:
+        sifra:
+          type: integer
+          example: 106231080
+        naziv:
+          type: string
+          example: BAR
+        sort_order:
+          type: integer
+          example: 100
+        medjunarodna:
+          type: integer
+          description: 1 = international (Montenegro) station
+          example: 1
+
+    TrasaStop:
+      type: object
+      description: One stop in the train route
+      properties:
+        iD_VOZ: { type: integer, example: 495 }
+        rb: { type: integer, description: Sequence number, example: 1 }
+        sifrA_STANICE: { type: integer, example: 106231080 }
+        vremE_DOLASKA: { type: string, description: Arrival HH:MM, example: '20:10' }
+        vremE_POLASKA: { type: string, description: Departure HH:MM, example: '20:10' }
+        naziV_STANICE: { type: string, example: BAR }
+
+    FreePlaces:
+      type: object
+      description: Free places per accommodation class
+      properties:
+        Voz: { type: integer, description: Train number, example: 432 }
+        BROJS1: { type: integer, description: Seats 1st class, example: 0 }
+        BROJS2: { type: integer, description: Seats 2nd class, example: 56 }
+        BROJL1: { type: integer, description: Couchette 1st, example: 0 }
+        BROJL2: { type: integer, description: Couchette 2nd, example: 0 }
+        BROJPT: { type: integer, description: Sleeper (postelja) T, example: 0 }
+        BROJPD: { type: integer, description: Sleeper (postelja) D, example: 0 }
+        BROJSING: { type: integer, description: Single sleeper compartment, example: 0 }
+        BROJA: { type: integer, description: Accompanied car A, example: 0 }
+        BROJB: { type: integer, description: Accompanied car B, example: 0 }
+
+    Connection:
+      type: object
+      properties:
+        odsifra: { type: integer, example: 106231080 }
+        dosifra: { type: integer, example: 16052 }
+        idvoz: { type: integer, example: 495 }
+        brvoz: { type: integer, description: Train number, example: 432 }
+        nazivvoz: { type: string, description: Train name/type, example: IR }
+        rang: { type: integer, example: 11 }
+        rangs: { type: string, example: IR }
+        vremep: { type: string, description: Departure HH:MM, example: '20:10' }
+        vremed: { type: string, description: Arrival HH:MM, example: '07:08' }
+        nazivod: { type: string, example: BAR }
+        nazivdo: { type: string, example: BEOGRAD CENTAR }
+        idrel: { type: integer, description: Relation ID, example: 5917956 }
+        relkm: { type: integer, example: 5917956 }
+        ponuda: { type: string, description: Offer code, example: BSKqraA }
+        cenau: { type: number, description: Price (RSD), example: 2846.0 }
+        cenao: { type: number, example: 2846.0 }
+        cenad: { type: number, example: 0.0 }
+        cenab: { type: number, example: 0.0 }
+        cenar: { type: number, example: 0.0 }
+        tiprez: { type: integer, example: 0 }
+        trajanje_putovanja: { type: string, description: Travel duration HH:MM, example: '10:58' }
+        datum_dolaska: { type: string, format: date-time, example: '2026-09-18T00:00:00' }
+        br_slobodnih_mesta: { type: integer, example: 56 }
+        br_slobodnih_mesta12:
+          type: string
+          example: 'Broj slobodnih mesta Razred 2: 56, Razred 1: 0'
+        rezervacioni_sistem: { type: boolean, example: true }
+        napomena: { type: string, example: '' }
+        napomenaE: { type: string, example: '' }
+        soko: { type: boolean, description: SOKO high-speed service flag, example: false }
+        bsM_R2: { type: integer, description: Free places 2nd class, example: 56 }
+        bsM_R1: { type: integer, description: Free places 1st class, example: 0 }
+        vrsta_cene: { type: integer, description: Price type, example: 62 }
+        pojedinacna_karta: { type: integer, example: 1 }
+        sifra_povlastice: { type: integer, description: Discount code, example: 0 }
+        vrsta_saobracaja: { type: string, description: 'Traffic type (M = international)', example: M }
+        kusetpostelja: { type: integer, description: 1 = couchette/sleeper offered, example: 1 }
+        praceniauto: { type: integer, description: 1 = car transport available, example: 0 }
+        mS_SlobodnaMesta:
+          $ref: '#/components/schemas/FreePlaces'
+        etTrasaVoza:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrasaStop'
+        cenRez:
+          type: array
+          description: Reservation-fee matrix (present with an active session). Rows map TIP→TIPU and RAZRED→TIP_KABINE.
+          items:
+            type: object
+            properties:
+              TIP: { type: integer, description: '1 = seat, 2 = couchette, 3 = sleeper, 4 = car', example: 3 }
+              RAZRED: { type: integer, description: Sub-class (razred) within the type, example: 3 }
+              DIN: { type: number, description: Fee RSD, example: 1913.0 }
+              EUR: { type: number, description: Fee EUR, example: 16.0 }
+              REL: { type: string, description: 'M = international, U = domestic', example: M }
+        eTCVJson:
+          type: string
+          description: Full TcvCena payload as a JSON string (present with an active session; lets clients skip the separate TCV/TcvCena call).
+
+    TcvCena:
+      type: object
+      properties:
+        Stanice:
+          type: array
+          items: { type: object }
+        Relacije:
+          type: array
+          items: { type: object }
+        VrsteCena:
+          type: array
+          description: Available price types
+          items:
+            type: object
+            properties:
+              VRSTA_CENE: { type: integer, example: 62 }
+              OPIS: { type: string, example: SET za ZPCG }
+              RAZRED: { type: integer, example: 3 }
+        Povlastice:
+          type: array
+          description: Available discounts
+          items:
+            type: object
+            properties:
+              SIFRA_POVLASTICE: { type: integer, example: 1 }
+              OSNOV: { type: string, example: RVC }
+              NAPOMENA: { type: string, example: '6-14 GODINA' }
+        CeneTCV:
+          type: array
+          description: Per-segment tariff rows (RSD + EUR)
+          items:
+            type: object
+            properties:
+              SIFRA_UPRAVE: { type: integer, description: 'Railway administration (1062=ZPCG, 1172=SV)', example: 1062 }
+              KM: { type: integer, example: 201 }
+              CENA_EURO: { type: number, example: 13.0 }
+              CENA_DINARA: { type: number, example: 4257.0 }
+              KURS: { type: number, description: RSD per EUR, example: 119.6 }
+        VRSTA_CENE: { type: integer, example: 62 }
+        TCV_SUM_RSD: { type: number, example: 4257.0 }
+        TCV_SUM_EUR: { type: number, example: 35.6 }
+        KURS: { type: number, example: 119.6 }
+
+    ReservationRequest:
+      type: object
+      required: [ORDER_IDU, BROJ_VOZAU, DAT_SAOBRACAJAU, OD_STANICAU, DO_STANICAU, BROJ_MESTAU, TIPU]
+      properties:
+        ORDER_IDU: { type: string, description: Temporary order ID (SVOID...), example: SVOID96396446 }
+        BROJ_VOZAU: { type: integer, description: Train number, example: 432 }
+        DAT_SAOBRACAJAU: { type: string, description: 'Travel date M-D-YYYY', example: '9-28-2026' }
+        OD_STANICAU: { type: integer, example: 106231080 }
+        DO_STANICAU: { type: integer, example: 16052 }
+        BROJ_MESTAU: { type: integer, description: Number of places, example: 1 }
+        TIPU: { type: integer, description: 'Place type: 1 = seat, 2 = couchette (Ležaj), 3 = sleeper (Postelja), 4 = car (Auto)', example: 3 }
+        TIP_KABINE: { type: integer, nullable: true, description: 'Sub-class (razred) within the type. Seat: 2. Ležaj: 1 = AC (4-berth), 2 = BC (6-berth). Postelja: 1 = Single, 2 = Double, 3 = Turist. Auto: 1', example: 3 }
+        POZICIJAU: { type: integer, nullable: true, description: 'Requested position (type-dependent, see Reservation Types); honoured when available', example: 1 }
+        POLU: { type: string, description: 'Passenger gender for shared compartments (M = Muski/male, Z = Zenski/female)', example: M }
+
+    ReservationResult:
+      type: object
+      properties:
+        ordeR_ID: { type: string, example: SVOID59144750 }
+        broJ_KOLA: { type: number, description: Car number, example: 470.0 }
+        mestO_1: { type: string, description: Seat/berth number, example: '33' }
+        pozicijA_1: { type: string, description: 'Position (dole/sredina/gore)', example: sredina }
+        cenA_1: { type: number, description: Price RSD, example: 1435.0 }
+        cenA_1E: { type: number, description: Price EUR, example: 12.0 }
+        cena: { type: number, example: 1435.0 }
+        cenae: { type: number, example: 12.0 }
+        koD_ODGOVORA: { type: number, description: 'Response code: 0 = OK (place assigned), 1 = failure (all mestO/pozicijA/cenA fields null)', example: 0.0 }
+        broJ_REZERVACIJE: { type: string, description: Reservation number(s), example: '26731807,,,,' }
+
+    ReservationStatus:
+      type: object
+      properties:
+        reZ_ORDER_TMP_ID: { type: string, example: SVOID84702117 }
+        eT_ORDER_ID: { type: string, example: SVOID14205279 }
+        vreme: { type: string, format: date-time, example: '2026-09-17T14:06:48.167' }
+        broJ_VOZA: { type: integer, example: 432 }
+        mestO_BR: { type: integer, description: Seat/berth number, example: 41 }
+        kolA_BR: { type: integer, description: Car number, example: 460 }
+        rednI_BROJ: { type: integer, example: 1 }
+        broJ_KARTE: { type: integer, example: 0 }
+        datuM_PUTOVANJA: { type: string, description: 'Travel date DDMM', example: '2809      ' }
+        tiP_MESTA: { type: integer, description: 'Place type (3 = seat)', example: 3 }
+        tiP_ODELJKA: { type: integer, description: Compartment type, example: 1 }
+        opiS_ODELJKA: { type: string, description: 'Compartment position (dole/gore)', example: dole }
+        cenA_SVE: { type: number, description: Total price RSD, example: 5740.0 }
+        cenA_EUR: { type: number, example: 48.0 }
+        putnik: { type: string, example: Max Mustermann }
+        reZ_VRSAOB: { type: string, example: M }
+
+    VratiRezervaciju:
+      type: object
+      properties:
+        result: { type: integer, example: 0 }
+        message:
+          type: string
+          example: REZERVACIJA NE MOZE DA SE OTKAZE JER JE KUPOVINA U TOKU
+        imaBrojKarte: { type: boolean, example: false }
+        imaEtOrderId: { type: boolean, example: true }
+        etOrderId: { type: string, example: SVOID14205279 }
+        paymentProtection: { type: boolean, example: true }
+        protectionMinutes: { type: integer, description: Payment protection window, example: 20 }
+        cancelGuard: { type: boolean, description: True when a cancel was guarded/blocked, example: true }
+        cancelState: { type: string, description: 'STARTED (cancelled) / NOT_FOUND (unknown or already cancelled)', example: NOT_FOUND }
+        clientType: { type: string, example: UNKNOWN }
+
+    KartaPostRequest:
+      type: object
+      properties:
+        ID_USER: { type: integer, example: 12345 }
+        HASH: { type: string, example: '' }
+        DATUM_KUPOVINE: { type: string, format: date-time, example: '2026-09-17T12:08:36.566Z' }
+        ID_RELACIJE: { type: integer, example: 5917956 }
+        OD: { type: integer, example: 106231080 }
+        DO: { type: integer, example: 16052 }
+        SMER: { type: string, description: Direction, example: '1' }
+        VIA: { type: integer, example: 1 }
+        VAZI_OD: { type: string, description: 'Valid from DD-MM-YYYY', example: '28-09-2026' }
+        VAZI_DO: { type: string, nullable: true }
+        VOZA: { type: integer, description: Train number, example: 432 }
+        RAZREDA: { type: string, description: Class, example: '2' }
+        VREME_POLASKAA: { type: string, example: '20:10' }
+        VREME_DOLASKAA: { type: string, example: '07:08' }
+        RAZREDR: { type: string, example: '' }
+        BROJ_PUTNIKA: { type: integer, example: 1 }
+        KURS_DINARA_ZA_EVRO: { type: number, example: 0 }
+        UKUPNA_CENA: { type: number, description: Total price RSD, example: 9997 }
+        PLACENA: { type: integer, description: Paid flag, example: 0 }
+        ETKARTADATA:
+          type: string
+          description: |-
+            JSON-stringified ticket payload. Contains `putnici[]` (passengers: imeprezime, datumrodjenja, sifrapovlastice), `cene[]`/`ceneEur[]` (prices), and a full `vozData` snapshot of the selected connection. For a car booking it also carries `auto` (`{kategorija, kategorijaID, stranaRegistracija, marka, vlasnik, registracija, redni_broj}`), `cenaMestaAuto`, and `mestaAuto` (the car's seat assignment).
+        ET_REZ_ORDER_TMP: { type: string, description: Temporary reservation order ID this purchase settles, example: SVOID06399351 }
+        BROJ_OSNOVNE_KARTE: { type: integer, description: Base-ticket number (0 for a new purchase), example: 0 }
+        TIP_KARTE: { type: integer, description: Ticket type, example: 0 }
+
+    KartaPostResponse:
+      type: object
+      properties:
+        error: { type: integer, description: 0 = OK, non-zero = error code (9098 = purchase already started, 9013 = price mismatch), example: 9098 }
+        errorMessage:
+          type: string
+          example: Kupovina za ovu rezervaciju je vec pokrenuta. Placanje nije poslato banci.
+        oid: { type: string, description: Order ID, example: SVOID14205282 }
+        unos: { type: string, description: Status keyword, example: duplikat_rezervacije }
+        clientAmount: { type: number, description: 'Total the client sent (present on error 9013)', example: 14781.0 }
+        serverAmount: { type: number, description: 'Total the server computed (present on error 9013)', example: 13370.0 }
+        difference: { type: number, description: 'serverAmount - clientAmount (present on error 9013)', example: -1411.0 }
+
+    PagedOrders:
+      type: object
+      properties:
+        totalOrders: { type: integer, example: 5 }
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+
+    Order:
+      type: object
+      description: One past order (snapshot). Return-journey legs use the parallel `…R` fields (vozr, razredr, vremE_POLASKAR, …).
+      properties:
+        iD_USER: { type: integer, example: 83996 }
+        ordeR_ID: { type: string, example: SVOID14205800 }
+        orbr: { type: integer, example: 14205800 }
+        datuM_KUPOVINE: { type: string, format: date-time, example: '2026-09-17T15:03:14.417' }
+        iD_RELACIJE: { type: integer, example: 2934741 }
+        od: { type: integer, example: 16002 }
+        do: { type: integer, example: 106231080 }
+        smer: { type: integer, example: 1 }
+        via: { type: integer, example: 1 }
+        vazI_OD: { type: string, format: date-time }
+        vazI_DO: { type: string, format: date-time }
+        voza: { type: integer, description: Train number, example: 433 }
+        razreda: { type: integer, example: 2 }
+        vremE_POLASKAA: { type: string, example: '19:35' }
+        vremE_DOLASKAA: { type: string, example: '06:54' }
+        broJ_PUTNIKA: { type: integer, example: 1 }
+        ukupnA_CENA: { type: number, description: Total price RSD, example: 14781.0 }
+        placena: { type: integer, description: 'Payment status: 0/paid, or an error code (e.g. 9013) if payment never completed', example: 9013 }
+        etkartadata: { type: string, description: JSON-stringified ticket payload (same shape as in the purchase request) }
+
+    UserProfile:
+      type: object
+      properties:
+        iD_USER: { type: integer, example: 83996 }
+        username: { type: string, format: email }
+        ime: { type: string, description: First name }
+        prezime: { type: string, description: Last name }
+        datuM_RODJENJA: { type: string, nullable: true, description: Date of birth }
+        lozinka: { type: string, nullable: true, description: Always null (password never returned) }
+        telefon: { type: string, nullable: true }
+        promo: { type: integer, example: 1 }
+        statuS_AKTIVACIJE: { type: integer, description: Account activation status, example: 1 }
+        sifrA_POVLASTICE: { type: integer, example: 0 }
+        pusH_NOTIFIKACIJE: { type: integer, example: 1 }
+        pusH_NOTIFIKACIJE_RELACIJE: { type: integer, example: 1 }
+        pusH_NOTIFIKACIJE_CILJANE: { type: integer, example: 1 }

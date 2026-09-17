@@ -85,6 +85,24 @@ Booking API for [tickets.rdc-deutschland.de](https://tickets.rdc-deutschland.de)
 - Traffic days: EN 344 Mo+Mi+Fr (Mi only from Hamburg), EN 345 Di+Do+Sa (Di only to Hamburg)
 - 14 stations across Germany and Sweden
 
+### Srbija Voz (`srbija-voz-api.yaml`)
+Booking API for [srbvoz.rs eKarta](https://webapi1.srbvoz.rs/ekarta/app/) (Serbian Railways), including:
+- REST/JSON API behind the AngularJS SPA (session-based login for booking, open search/pricing)
+- Covers the whole network (IC/SOKO, IR, regional; domestic + international)
+- International stations: Bar/Podgorica (Montenegro), Szeged (Hungary); Štrpci sits on a Bosnian stretch of the Belgrade–Bar line but is listed as domestic
+- Night train IR 432/433 "Lovćen" as the running example: Zemun (Beograd) ↔ Bar (Montenegro, ~11h via the Belgrade–Bar line)
+- Montenegro also served by seasonal daytime train 1131/1130 Subotica ↔ Bar; international online sales live since 21 July 2026 (no 5% web discount on international fares)
+- Full booking flow (search → tariff → ORKA reservation → purchase via Banca Intesa redirect)
+- Cross-border tariff split per administration (1062 ЖПЦГ/ZPCG Montenegro, 1172 Srbija Voz)
+- Dual-currency pricing (RSD + EUR, fixed exchange rate ~119.6 RSD/EUR)
+- Accommodation classes: seats (1st/2nd), couchette (ležaj), sleeper (postelja), single compartment, accompanied car
+- Per-class free-place counts (`mS_SlobodnaMesta`) and full train route (`etTrasaVoza`)
+- Seat/berth assignment with car, seat number and position (dole/sredina/gore)
+- 2 fare types: SET za ZPCG (62), CITY STAR round-trip-to-Montenegro (68); discounts incl. SRB PLUS card (30% domestic), child 6–14 (50%), 20% return, 5% web/app
+- Online refund via "Otkaži kartu" up to 24h before travel (10% fee retained); no refund after departure except on railway fault
+- Account endpoints: order history (`GetPagedOrders`), profile (`korisnik`), completed-order lookup (`zavrsena`), e-mail-verified password reset
+- Per-endpoint date-format quirks (YYYY-M-D / D-M-YYYY / M-D-YYYY / DD-MM-YYYY)
+
 ## Usage
 
 If you're using Google Chrome, it will block all requests from SwaggerUI by default. To circumvent this, you can create a new shortcut to Google Chrome and append the following parameters: `--disable-web-security -user-data-dir=~` (note: single dash in front of `user-data-dir`). The directory for `user-data-dir` is not important, but it needs to exist on the local file system.
