@@ -120,6 +120,8 @@ Basic id `f9fdfc15-0fd6-41e3-8018-d2ceaa4bc35d`, Flex id `9c43df02-4dc9-4c2c-aef
 
 Lowest price per day. Each day is `available` (with `lowestPrice`) or `no_service` (`lowestPrice: null`) — the 1791 runs only selected days.
 
+**Range limit: max 62 days per request.** A `dateFrom`..`dateTo` span > 62 days is rejected with HTTP 400 (`"Fare calendar range cannot exceed 62 days"`). Scan the season in ≤62-day chunks.
+
 ```json
 {"dateFrom":"2027-03-20","dateTo":"2027-03-26","days":[
   {"date":"2027-03-24","status":"available","lowestPrice":{"amount":103,"currency":"EUR"}},
@@ -184,6 +186,10 @@ Multi-passenger with child ages:
 `childAges[]` is the discriminator: **age 0 → infant** (free, no seat), **age ≥1 → child** (75 %). So `children:2, childAges:[0,5]` prices as `children:1, infants:1` in `priceBreakdown`. (The bare `search`/`fare-calendar` use `childrenWithoutSeat` for infants instead.)
 
 Returns a signed **`priceToken`** (JWT) and `priceLockExpiresAt` (~10 min), plus `tariffClasses[]` (locked prices), `availableAncillaries[]`, `selectedAncillaries[]`, `pricing` and `validationErrors[]`. Re-call on each ancillary change. The `priceToken` is required by `POST /bookings`.
+
+**Two independent timers** — do not conflate:
+- **Price lock** — `prepare` → `priceLockExpiresAt` (~10 min). The UI counts down against it live ("Preis für 10 Minuten gesichert. Schließen Sie die Buchung ab, bevor sie in 6 Minuten abläuft."). No separate countdown field; it is derived from `priceLockExpiresAt` − now. On expiry, re-`prepare` to re-price.
+- **Reservation hold** — `bookings` → `expiresAt` (~30 min). Seat reservation; the booking expires if unpaid past it.
 
 `prepare` is lenient: it ignores `quotedTicketTotal` and even an unknown `tariffClassId` (still returns the full `tariffClasses[]` and a token). Price-drift and tariff validation happen at `POST /bookings` against the token, not here. Discount-code validation requires `code` (non-empty string) + `email` (valid email); `orderTotal` is optional.
 
@@ -301,6 +307,43 @@ A valid code presumably returns the resolved discount (not observed in the trace
 6. `bookings/{id}/ancillaries` (one call per add-on, `product_id`) → attaches each add-on, running `bookingTotalAmount`
 7. `bookings/{id}/pay` (`sumup`) → `checkoutId` → SumUp hosted widget completes payment (tickets + ancillaries settled together)
 8. optional: `discount-codes/validate` before booking
+
+## Return Journey (Order flow)
+
+A return (or any multi-leg) purchase does **not** use the single-shot `POST /api/bookings`. Instead the front end opens an **order** and attaches each leg as its own booking, then pays once for the whole order. Each leg is prepared independently, so there are **two `prepare` calls and two `priceToken`s** (one per leg). There is no combined `bookings` body and no `legs[]` array; the two legs stay separate bookings sharing one `orderId` and one `expiresAt`.
+
+New endpoints (order-scoped; the one-way `bookings`/`ancillaries`/`pay` on the running example are the München↔Hamburg trains 1790/1791):
+
+1. `POST /api/orders` → open the container:
+   ```json
+   {"contactEmail":"max@example.com","contactPhone":"+4915012345678"}
+   ```
+   ```json
+   {"orderId":"d383ada6-…","status":"open","expiresAt":"2026-09-23T21:06:57Z"}
+   ```
+2. `prepare` each leg separately → two `priceToken`s (outbound trip, return trip).
+3. `POST /api/orders/{orderId}/bookings` → attach the **outbound** leg (`direction:"outbound"`):
+   ```json
+   {"tripId":"46219776-…","tariffClassId":"f9fdfc15-…",
+    "passengers":[{"type":"adult","firstName":"Max","lastName":"Mustermann","email":"max@example.com"}],
+    "direction":"outbound","contactLanguage":"de","quotedTicketTotal":65,"priceToken":"eyJ…",
+    "ancillaryServices":[],"boardingStationId":"2039076a-…","alightingStationId":"0526883c-…"}
+   ```
+4. `POST /api/orders/{orderId}/bookings` again → attach the **return** leg (`direction:"return"`), with its **own** `tripId` and `priceToken`, and boarding/alighting stations **swapped**:
+   ```json
+   {"tripId":"a163eaae-…","direction":"return","priceToken":"eyJ…",
+    "boardingStationId":"0526883c-…","alightingStationId":"2039076a-…", …}
+   ```
+   Each `bookings` call returns its own `bookingId` + `bookingReference`, `status:"reserved"`, and the shared order `expiresAt`. Response shape is the same `Booking` as the one-way flow.
+5. `POST /api/bookings/{bookingId}/ancillaries` per booking — unchanged (`product_id`, running `bookingTotalAmount`), added per leg.
+6. `POST /api/orders/{orderId}/pay`  body `{"paymentMethod":"sumup"}` → one SumUp checkout for the whole order:
+   ```json
+   {"orderId":"d383ada6-…","bookingId":"1ca300ca-…","status":"initiated",
+    "paymentToken":"ORD-d383ada6-…","redirectUrl":"","checkoutId":"b27b3759-…"}
+   ```
+   `paymentToken` is `ORD-{orderId}`; `bookingId` echoes the first leg. Same SumUp hosted-widget flow as the single-booking `/pay`.
+
+**New vs one-way**: order-level `contactEmail`/`contactPhone` move onto `POST /api/orders`; the per-leg `bookings` body drops those contact fields and gains **`direction` (`outbound`|`return`)** plus `tariffClassId` at the top level; ancillaries and pay move from `bookings/{id}` to `orders/{id}` (pay only). Everything else (prepare, priceToken semantics, station swapping, ancillary `product_id`, VAT 10 %) is identical to the one-way flow.
 
 ## Notes
 

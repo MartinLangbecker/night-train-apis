@@ -86,12 +86,12 @@ paths:
       tags: [Search]
       summary: Cheapest price per day
       description: |-
-        Lowest price per day over a date window, for a fare strip / calendar view. Each day is `available` (with a `lowestPrice`) or `no_service` (`lowestPrice: null`) — the 1791 runs only on selected days.
+        Lowest price per day over a date window, for a fare strip / calendar view. Each day is `available` (with a `lowestPrice`) or `no_service` (`lowestPrice: null`) — the 1791 runs only on selected days. The `dateFrom`..`dateTo` range must not exceed 62 days (HTTP 400 otherwise); scan longer spans in chunks.
       parameters:
         - { name: from, in: query, required: true, schema: { type: string, format: uuid }, description: Origin municipality/station id. }
         - { name: to, in: query, required: true, schema: { type: string, format: uuid }, description: Destination municipality/station id. }
         - { name: dateFrom, in: query, required: true, schema: { type: string, format: date } }
-        - { name: dateTo, in: query, required: true, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, required: true, schema: { type: string, format: date }, description: "Max 62 days after dateFrom; a wider range returns HTTP 400." }
         - { name: adults, in: query, required: false, schema: { type: integer, default: 1 } }
       responses:
         '200':
@@ -332,6 +332,80 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+
+  /api/orders:
+    post:
+      tags: [Order]
+      summary: Open an order (multi-leg / return container)
+      description: |-
+        Opens an empty order that groups one or more bookings under a shared contact and payment. This is the entry point for the **return-journey** flow: the front end opens one order, then attaches the outbound and the return leg as two separate bookings via `POST /api/orders/{orderId}/bookings`, and finally pays once via `POST /api/orders/{orderId}/pay`. A one-way purchase can still use the legacy single-shot `POST /api/bookings`; the order flow is used whenever more than one leg is booked together. Returns `orderId`, `status: open` and `expiresAt` (~30-min hold shared by all bookings in the order).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contactEmail]
+              properties:
+                contactEmail: { type: string, format: email, example: max.mustermann@example.com }
+                contactPhone: { type: string, example: "+4915012345678" }
+      responses:
+        '201':
+          description: Order opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /api/orders/{orderId}/bookings:
+    post:
+      tags: [Order]
+      summary: Add a leg (booking) to an order
+      description: |-
+        Attaches one leg to an open order. Called once per leg: for a return journey the outbound leg is posted with `direction: outbound` and the return leg with `direction: return`, each carrying its own `tripId` and its own `priceToken` (one `prepare` call per leg). The `boardingStationId`/`alightingStationId` are swapped between the two legs. Each call returns its own `bookingId` and human `bookingReference`, with `status: reserved` and the shared order `expiresAt`. Ancillaries are then added per booking via `POST /api/bookings/{bookingId}/ancillaries`, exactly as in the one-way flow.
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderBookingRequest'
+      responses:
+        '201':
+          description: Leg reserved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /api/orders/{orderId}/pay:
+    post:
+      tags: [Order]
+      summary: Pay for the whole order
+      description: |-
+        Starts payment for all bookings in the order in a single SumUp checkout. `paymentMethod: sumup` returns a `checkoutId`; the front end then drives the SumUp hosted card widget, exactly as with the single-booking `POST /api/bookings/{id}/pay`. The response echoes the order `paymentToken` in the form `ORD-{orderId}` and a representative `bookingId` (the first leg). `redirectUrl` is empty for the embedded SumUp flow.
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentMethod]
+              properties:
+                paymentMethod:
+                  type: string
+                  enum: [sumup]
+                  example: sumup
+      responses:
+        '201':
+          description: Payment initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentInitiation'
 
 components:
   schemas:
@@ -603,7 +677,10 @@ components:
         priceToken:
           type: string
           description: Signed JWT locking the unit price; replay into POST /bookings.
-        priceLockExpiresAt: { type: string, format: date-time }
+        priceLockExpiresAt:
+          type: string
+          format: date-time
+          description: "~10 min after pricedAsOf. The UI counts down against this live ('Preis für 10 Minuten gesichert … läuft in N Minuten ab'); on expiry, re-prepare. Distinct from the booking's ~30-min reservation hold (expiresAt)."
         configVersionId: { type: string, format: uuid }
         pricedAsOf: { type: string, format: date-time }
         tariffClasses:
@@ -734,6 +811,57 @@ components:
           type: string
           format: date-time
           description: ~30 minutes after creation.
+
+    Order:
+      type: object
+      description: Container grouping one or more bookings (legs) under a shared contact and one payment. Backbone of the return-journey flow.
+      properties:
+        orderId: { type: string, format: uuid }
+        status: { type: string, enum: [open, initiated, paid, cancelled, expired], example: open }
+        expiresAt:
+          type: string
+          format: date-time
+          description: ~30 minutes after creation; shared by every booking in the order.
+
+    OrderBookingRequest:
+      type: object
+      description: One leg attached to an order. Differs from the one-way `BookingRequest` by carrying `direction` and `tariffClassId`, and by omitting the order-level contact fields (those live on the order).
+      required: [tripId, tariffClassId, passengers, priceToken, direction]
+      properties:
+        tripId: { type: string, format: uuid, description: This leg's trip. Outbound and return legs carry different tripIds. }
+        tariffClassId: { type: string, format: uuid }
+        passengers:
+          type: array
+          items:
+            type: object
+            required: [type, firstName, lastName]
+            properties:
+              type: { type: string, enum: [adult, child], example: adult }
+              firstName: { type: string, example: Max }
+              lastName: { type: string, example: Mustermann }
+              age: { type: integer, description: "On children; age 0 is priced as an infant (free)." }
+              email: { type: string, format: email, description: Only the contact passenger needs an email. }
+        direction:
+          type: string
+          enum: [outbound, return]
+          description: Which leg of the journey this booking is. A one-way order uses only `outbound`.
+          example: outbound
+        contactLanguage: { type: string, example: de }
+        quotedTicketTotal: { type: number, example: 65 }
+        priceToken:
+          type: string
+          description: The JWT from this leg's own POST /trips/{id}/prepare. Each leg has its own token.
+        ancillaryServices:
+          type: array
+          items: { type: object }
+        boardingStationId:
+          type: string
+          format: uuid
+          description: "Boarding stop for this leg. Swapped with alightingStationId between the outbound and return legs."
+        alightingStationId:
+          type: string
+          format: uuid
+          description: "Alighting stop for this leg."
 
     PaymentInitiation:
       type: object
