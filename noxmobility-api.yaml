@@ -1,0 +1,854 @@
+openapi: 3.0.0
+info:
+  title: NOX Mobility API
+  version: 1.0.0
+  description: |-
+    Reverse-engineered booking API of [NOX](https://noxmobility.com), a German night-train startup. Covers station search, fare calendar, trip search, price-locked preparation with ancillaries, reservation and payment (SumUp).
+
+    The running example is the overnight train **1791 Hamburg Hbf → München Hbf** (~10h 51m, via Bremen and Augsburg). Boarding/alighting is allowed only at selected intermediate stops (`allowsBoarding` / `allowsAlighting`).
+
+    ## Conventions
+
+    - **Base URL**: `https://api.noxmobility.com`. The public site `noxmobility.com` is a Next.js front end that calls this API directly (browser `Origin: https://noxmobility.com`, CORS-enabled, `OPTIONS` preflight on writes).
+    - **Auth**: none. All endpoints are unauthenticated; no token or cookie is sent. Payment card data never touches this API (handed off to SumUp).
+    - **IDs**: every station, municipality, tariff class, trip, booking and ancillary service is a UUID v4.
+    - **Dates**: `YYYY-MM-DD` for query dates; timestamps are ISO 8601 local (no zone offset in trip times, e.g. `2027-03-28T21:22:42`).
+    - **Currency**: EUR throughout. Prices are plain numbers (e.g. `66`, `49.5`); `tariff-classes` returns `basePrice` as a decimal string (`"50.00"`).
+    - **Languages**: names come as an object `{de, en, default}`. `Accept-Language: de` (or `en`) selects the response language for labels.
+    - **Price lock**: `search` prices are `priceType: estimate`. `POST /trips/{id}/prepare` issues a signed `priceToken` (JWT) valid ~10 min (`priceLockExpiresAt`); the token must be replayed into `POST /bookings`.
+
+servers:
+  - url: https://api.noxmobility.com
+    description: Production API
+
+tags:
+  - name: Catalogue
+    description: Tariff classes and static configuration
+  - name: Stations
+    description: Station and municipality lookup
+  - name: Search
+    description: Fare calendar and trip search
+  - name: Booking
+    description: Price preparation, reservation and payment
+  - name: Discounts
+    description: Discount-code validation
+
+paths:
+  /api/tariff-classes:
+    get:
+      tags: [Catalogue]
+      summary: List tariff classes
+      description: |-
+        The bookable fare classes. Two are active: **Basic** (`TICKET_BASIC`, no surcharge) and **Flex** (`TICKET_FLEX`, +50 EUR base). Each references a cancellation and a rebooking (cancellation-charge) policy by id; the concrete fee schedule is returned inline on a trip's `prices[].flexibilityPolicy`.
+      responses:
+        '200':
+          description: Array of tariff classes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TariffClass'
+
+  /api/geo/trips/autocomplete:
+    get:
+      tags: [Stations]
+      summary: Autocomplete stations and municipalities
+      description: |-
+        Type-ahead over origins/destinations. Returns municipalities (a city grouping several stations, `type: municipality`) and stations (`type: station`). A municipality id can be used directly as `from`/`to` in fare-calendar and search. Municipalities carry a `codes.db` short code (e.g. `HH` for Hamburg); stations carry `codes.plc` and `codes.uic`.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+          description: Search term. Empty string returns a default set.
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 8 }
+        - name: types
+          in: query
+          required: false
+          schema: { type: string, default: municipality,station }
+          description: Comma-separated filter, e.g. `municipality,station`.
+      responses:
+        '200':
+          description: Array of matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoMatch'
+
+  /api/trips/fare-calendar:
+    get:
+      tags: [Search]
+      summary: Cheapest price per day
+      description: |-
+        Lowest price per day over a date window, for a fare strip / calendar view. Each day is `available` (with a `lowestPrice`) or `no_service` (`lowestPrice: null`) — the 1791 runs only on selected days.
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: uuid }, description: Origin municipality/station id. }
+        - { name: to, in: query, required: true, schema: { type: string, format: uuid }, description: Destination municipality/station id. }
+        - { name: dateFrom, in: query, required: true, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, required: true, schema: { type: string, format: date } }
+        - { name: adults, in: query, required: false, schema: { type: integer, default: 1 } }
+      responses:
+        '200':
+          description: Per-day lowest prices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FareCalendar'
+
+  /api/trips/search:
+    get:
+      tags: [Search]
+      summary: Search trips for a date
+      description: |-
+        Direct trips on one date with per-tariff-class prices, availability and the full intermediate-stop list. An empty `results[]` means no service that day. Prices are `priceType: estimate` — lock them via `prepare` before booking. `availability` gives `total` seats, `available` remaining and a coarse `status`.
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: to, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+        - { name: adults, in: query, required: false, schema: { type: integer, default: 1 } }
+        - { name: children, in: query, required: false, schema: { type: integer, default: 0 }, description: Children (occupy a seat, ~75 % of adult fare). }
+        - { name: childrenWithoutSeat, in: query, required: false, schema: { type: integer, default: 0 }, description: "Infants without a seat; mapped to `infants` in priceBreakdown (free)." }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 10 } }
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripSearchResult'
+
+  /api/trips/{tripId}/prepare:
+    post:
+      tags: [Booking]
+      summary: Prepare a trip (lock price, resolve ancillaries)
+      description: |-
+        Locks a price for a trip + tariff class and returns the bookable ancillary catalogue with resolved prices. Returns a signed `priceToken` (JWT) and `priceLockExpiresAt` (~10 min). The token is required by `POST /bookings`. Re-call `prepare` on each ancillary selection change; the response echoes `selectedAncillaries` and `pricing`, and reports `validationErrors[]` (e.g. seat direction needs a passenger assignment).
+      parameters:
+        - { name: tripId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrepareRequest'
+      responses:
+        '201':
+          description: Price locked, ancillaries resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrepareResponse'
+
+  /api/bookings:
+    post:
+      tags: [Booking]
+      summary: Create a reservation
+      description: |-
+        Creates a reservation from a `priceToken` obtained via `prepare`. Returns a human `bookingReference` (e.g. `2C0IQU`), an `orderId`, `status: reserved` and `expiresAt` (~30-min hold). The `pricing.priceBreakdown` includes per-item gross/net/VAT (10 % VAT). Pay via `POST /bookings/{id}/pay` before expiry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      responses:
+        '201':
+          description: Reservation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /api/bookings/{bookingId}/ancillaries:
+    post:
+      tags: [Booking]
+      summary: Add an ancillary to a booking
+      description: |-
+        Attaches one add-on to an existing reservation (one call per add-on). The request key is **`product_id`** (the ancillary `serviceId`) — note this differs from `prepare`, which uses `serviceId` under `ancillarySelections`. Seat direction needs `metadata.passengerSelections` with a concrete `passengerIndex`. The response returns the added ancillary (`paymentStatus: paid`, folded into the pending order) and the running `bookingTotalAmount`.
+      parameters:
+        - { name: bookingId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_id, quantity]
+              properties:
+                product_id: { type: string, format: uuid, description: The ancillary serviceId. }
+                quantity: { type: integer, example: 1 }
+                metadata:
+                  type: object
+                  properties:
+                    passengerSelections:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          passengerIndex: { type: integer }
+                          direction: { type: string, enum: [forward, backward] }
+      responses:
+        '201':
+          description: Ancillary added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AncillaryAdded'
+
+  /api/bookings/{bookingId}/pay:
+    post:
+      tags: [Booking]
+      summary: Initiate payment
+      description: |-
+        Starts payment for a reserved booking. `paymentMethod: sumup` returns a SumUp `checkoutId`; the front end then drives the SumUp hosted card widget (`js.sumup.com` / `gateway.sumup.com`) with that id. Card data is entered on SumUp, never on this API. `redirectUrl` is empty for the embedded SumUp flow.
+      parameters:
+        - { name: bookingId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentMethod]
+              properties:
+                paymentMethod:
+                  type: string
+                  enum: [sumup]
+                  example: sumup
+      responses:
+        '201':
+          description: Payment initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentInitiation'
+
+  /api/discount-codes/validate:
+    post:
+      tags: [Discounts]
+      summary: Validate a discount code
+      description: |-
+        Checks a discount code against an order total and email. `valid: false` carries an `errorCode` (e.g. `CODE_INVALID`) and a human `message`. A valid code presumably returns the resolved discount (not observed in the trace).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, orderTotal]
+              properties:
+                code: { type: string, example: 12345DS }
+                email: { type: string, format: email, example: max.mustermann@example.com }
+                orderTotal: { type: number, example: 66 }
+      responses:
+        '201':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscountValidation'
+
+  /api/health:
+    get:
+      tags: [Catalogue]
+      summary: Liveness check
+      description: Returns service and database liveness.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  database: { type: string, example: ok }
+
+  /api/stations:
+    get:
+      tags: [Stations]
+      summary: Full station master data
+      description: |-
+        Complete station records — richer than autocomplete. Each carries a nested `municipality` (with `region`), `officialName`, `plc`, `uic`, `eva`/`ibnr`/`stationCode` (null pre-launch), `status`, `timezone`, `isMainStation` and `archivedAt`. Includes non-main planned stations (`Hmb-Langenfeld Bbf`, `Mü-Pasing Bbf`) that autocomplete does not surface and that are not bookable endpoints.
+      responses:
+        '200':
+          description: Array of stations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StationFull'
+
+  /api/trips:
+    get:
+      tags: [Search]
+      summary: Raw timetable (all dated trips)
+      description: |-
+        Every dated trip in the schedule. Season 2027-03-23 → 2027-12-10, ~6 days/week. Train **1791** = southbound Hamburg→München, **1790** = northbound München→Hamburg, alternating by day (same physical unit `NOX2`). Fields include `timetableId`, `trainId`, `trainNumber`, `locomotiveName`/`locomotiveId`, `status`, `isAssignmentLocked`, `seatAllocationFrozenAt`, `seatAllocationCommunicatedAt`, `simulationOriginDepartureAt`.
+      responses:
+        '200':
+          description: Array of trips
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TripTimetableEntry'
+
+  /api/trips/{tripId}:
+    get:
+      tags: [Search]
+      summary: Trip detail
+      description: A single timetable entry plus an embedded `train` object (`name`, e.g. `NOX2`, `trainNumber`, `isActive`). Returns a NestJS 404 envelope for an unknown id.
+      parameters:
+        - { name: tripId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Trip detail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/TripTimetableEntry'
+                  - type: object
+                    properties:
+                      train:
+                        type: object
+                        properties:
+                          id: { type: string, format: uuid }
+                          name: { type: string, example: NOX2 }
+                          description: { type: string, nullable: true }
+                          trainNumber: { type: string, example: "1791" }
+                          isActive: { type: boolean }
+        '404':
+          description: Trip not found (NestJS error envelope)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  schemas:
+    LocalizedName:
+      type: object
+      description: Localized string; `default` mirrors the site default (usually German).
+      properties:
+        de: { type: string }
+        en: { type: string }
+        default: { type: string }
+      example: { de: München Hbf, en: Munich Central Station, default: München Hbf }
+
+    Money:
+      type: object
+      properties:
+        amount: { type: number, example: 66 }
+        currency: { type: string, example: EUR }
+
+    TariffClass:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Flex }
+        accountingCode: { type: string, example: TICKET_FLEX }
+        basePrice: { type: string, description: Decimal string in EUR., example: "50.00" }
+        childDiscountType: { type: string, nullable: true }
+        childDiscountValue: { type: number, nullable: true }
+        isActive: { type: boolean }
+        priority: { type: integer, example: 100 }
+        cancellationPolicyId: { type: string, format: uuid }
+        cancellationChargePolicyId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    GeoMatch:
+      type: object
+      properties:
+        type: { type: string, enum: [municipality, station], example: municipality }
+        id: { type: string, format: uuid }
+        names: { $ref: '#/components/schemas/LocalizedName' }
+        codes:
+          type: object
+          description: |-
+            Code map. Municipalities carry `db` (DB short code). Stations carry `plc` and `uic`.
+          properties:
+            db: { type: string, example: HH }
+            plc: { type: string, example: DE 14393 }
+            uic: { type: string, example: "8002549" }
+        countryCode: { type: string, example: DE }
+        location:
+          type: object
+          properties:
+            latitude: { type: string, example: "53.551086" }
+            longitude: { type: string, example: "9.993682" }
+
+    Station:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        names: { $ref: '#/components/schemas/LocalizedName' }
+        codes:
+          type: object
+          properties:
+            plc: { type: string, example: DE 14393 }
+            uic: { type: string, example: "8002549" }
+
+    FareCalendar:
+      type: object
+      properties:
+        dateFrom: { type: string, format: date }
+        dateTo: { type: string, format: date }
+        days:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              status: { type: string, enum: [available, no_service], example: available }
+              lowestPrice:
+                nullable: true
+                allOf: [ { $ref: '#/components/schemas/Money' } ]
+
+    Passengers:
+      type: object
+      properties:
+        adults: { type: integer, example: 1 }
+        children:
+          type: array
+          items: { type: object }
+        childrenWithoutSeat: { type: integer, example: 0 }
+
+    FeeRule:
+      type: object
+      description: One tier of a fee schedule; the highest matching `minHoursBeforeDeparture` applies.
+      properties:
+        minHoursBeforeDeparture: { type: integer, example: 168 }
+        feePercent: { type: integer, example: 25 }
+
+    FlexibilityPolicy:
+      type: object
+      properties:
+        rebooking:
+          type: object
+          properties:
+            rules: { type: array, items: { $ref: '#/components/schemas/FeeRule' } }
+        cancellation:
+          type: object
+          properties:
+            rules: { type: array, items: { $ref: '#/components/schemas/FeeRule' } }
+
+    PriceBreakdown:
+      type: object
+      properties:
+        adultUnitPrice: { type: number, example: 66 }
+        childUnitPrice: { type: number, example: 49.5 }
+        infantUnitPrice: { type: number, example: 0 }
+        adults: { type: integer }
+        children: { type: integer }
+        infants: { type: integer }
+
+    TariffPrice:
+      type: object
+      properties:
+        tariffClassId: { type: string, format: uuid }
+        tariffClassName: { type: string, example: Basic }
+        amount: { type: number, example: 66 }
+        currency: { type: string, example: EUR }
+        priceType: { type: string, enum: [estimate, fixed], example: estimate }
+        priceBreakdown: { $ref: '#/components/schemas/PriceBreakdown' }
+        includedAncillaries:
+          type: array
+          items: { type: object }
+        flexibilityPolicy: { $ref: '#/components/schemas/FlexibilityPolicy' }
+
+    IntermediateStop:
+      type: object
+      properties:
+        station: { $ref: '#/components/schemas/Station' }
+        arrival: { type: string, format: date-time }
+        departure: { type: string, format: date-time }
+        platform: { type: string, example: "9" }
+        allowsBoarding: { type: boolean }
+        allowsAlighting: { type: boolean }
+
+    Terminus:
+      type: object
+      properties:
+        station: { $ref: '#/components/schemas/Station' }
+        time: { type: string, format: date-time }
+        platform: { type: string, example: "8" }
+
+    TripResult:
+      type: object
+      properties:
+        tripId: { type: string, format: uuid }
+        trainNumber: { type: string, example: "1791" }
+        date: { type: string, format: date }
+        status: { type: string, example: bookable }
+        departure: { $ref: '#/components/schemas/Terminus' }
+        arrival: { $ref: '#/components/schemas/Terminus' }
+        durationMinutes: { type: integer, example: 651 }
+        intermediateStops:
+          type: array
+          items: { $ref: '#/components/schemas/IntermediateStop' }
+        prices:
+          type: array
+          items: { $ref: '#/components/schemas/TariffPrice' }
+        availability:
+          type: object
+          properties:
+            total: { type: integer, example: 78 }
+            available: { type: integer, example: 46 }
+            status: { type: string, example: available }
+        pricingFallback: { type: boolean }
+        configVersionId: { type: string, format: uuid }
+
+    TripSearchResult:
+      type: object
+      properties:
+        passengers: { $ref: '#/components/schemas/Passengers' }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/TripResult' }
+
+    PrepareRequest:
+      type: object
+      required: [tariffClassId, passengers, quotedTicketTotal]
+      properties:
+        tariffClassId: { type: string, format: uuid }
+        passengers:
+          type: object
+          properties:
+            adults: { type: integer, example: 1 }
+            children: { type: integer, example: 0 }
+            childAges:
+              type: array
+              description: "One age per child. Age 0 is priced as an infant (free, no seat); age >= 1 as a child (~75 %)."
+              items: { type: integer }
+              example: [0, 5]
+        quotedTicketTotal:
+          type: number
+          description: The price the client last saw; used to detect drift against the live price.
+          example: 66
+        ancillarySelections:
+          type: array
+          description: Selected add-ons. Seat direction needs `metadata.passengerSelections`.
+          items:
+            type: object
+            properties:
+              serviceId: { type: string, format: uuid }
+              quantity: { type: integer, example: 1 }
+              metadata:
+                type: object
+                properties:
+                  passengerSelections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        passengerIndex: { type: integer, nullable: true }
+                        direction: { type: string, enum: [forward, backward] }
+
+    Ancillary:
+      type: object
+      properties:
+        serviceId: { type: string, format: uuid }
+        code: { type: string, example: OVERSIZED_LUGGAGE }
+        names: { $ref: '#/components/schemas/LocalizedName' }
+        description: { $ref: '#/components/schemas/LocalizedName' }
+        category:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            code: { type: string, example: luggage }
+            names: { $ref: '#/components/schemas/LocalizedName' }
+        capacityLimit: { type: integer, nullable: true, example: 8 }
+        remainingCapacity: { type: integer, nullable: true, example: 8 }
+        maxQuantity: { type: integer, example: 1 }
+        quantityMode: { type: string, example: per_passenger }
+        includedQuantity: { type: integer, example: 0 }
+        availableAt:
+          type: array
+          items: { type: string, example: pre_trip }
+        price:
+          type: object
+          properties:
+            type: { type: string, example: fixed }
+            amount: { type: number, example: 9 }
+            currency: { type: string, example: EUR }
+            resolvedAmount: { type: number, example: 9 }
+        directionAvailability:
+          type: object
+          nullable: true
+          description: Only for the DIRECTION_SELECTION ancillary.
+          properties:
+            forward: { type: integer, example: 36 }
+            backward: { type: integer, example: 37 }
+
+    ValidationError:
+      type: object
+      properties:
+        serviceId: { type: string, format: uuid }
+        code: { type: string, example: DIRECTION_REQUIRES_PASSENGER_ASSIGNMENT }
+        message: { type: string, example: Passenger assignment is required for seat direction }
+
+    PrepareResponse:
+      type: object
+      properties:
+        priceToken:
+          type: string
+          description: Signed JWT locking the unit price; replay into POST /bookings.
+        priceLockExpiresAt: { type: string, format: date-time }
+        configVersionId: { type: string, format: uuid }
+        pricedAsOf: { type: string, format: date-time }
+        tariffClasses:
+          type: array
+          items: { $ref: '#/components/schemas/TariffPrice' }
+        availableAncillaries:
+          type: array
+          items: { $ref: '#/components/schemas/Ancillary' }
+        selectedAncillaries:
+          type: array
+          items: { type: object }
+        pricing:
+          type: object
+          properties:
+            ticketTotal: { type: number, example: 66 }
+            ancillaryTotal: { type: number, example: 0 }
+            total: { type: number, example: 66 }
+        validationErrors:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationError' }
+
+    BookingRequest:
+      type: object
+      required: [tripId, tariffClassId, passengers, contactEmail, priceToken]
+      properties:
+        tripId: { type: string, format: uuid }
+        tariffClassId: { type: string, format: uuid }
+        passengers:
+          type: array
+          items:
+            type: object
+            required: [type, firstName, lastName]
+            properties:
+              type: { type: string, enum: [adult, child], example: adult }
+              firstName: { type: string, example: Max }
+              lastName: { type: string, example: Mustermann }
+              age: { type: integer, description: "On children; age 0 is priced as an infant (free)." , example: 5 }
+              email: { type: string, format: email, description: Only the contact passenger needs an email. }
+        contactEmail: { type: string, format: email }
+        contactPhone: { type: string, example: "+4915012345678" }
+        contactLanguage: { type: string, example: de }
+        quotedTicketTotal: { type: number, example: 66 }
+        priceToken:
+          type: string
+          description: The JWT from POST /trips/{id}/prepare.
+        ancillaryServices:
+          type: array
+          items: { type: object }
+        boardingStationId:
+          type: string
+          format: uuid
+          description: "Must be a stop with `allowsBoarding: true`."
+        alightingStationId:
+          type: string
+          format: uuid
+          description: "Must be a stop with `allowsAlighting: true`."
+
+    Booking:
+      type: object
+      properties:
+        bookingId: { type: string, format: uuid }
+        bookingReference: { type: string, example: 2C0IQU }
+        orderId: { type: string, format: uuid }
+        status: { type: string, enum: [reserved, initiated, paid, cancelled, expired], example: reserved }
+        trip:
+          type: object
+          properties:
+            tripId: { type: string, format: uuid }
+            trainNumber: { type: string, example: "1791" }
+            date: { type: string, format: date }
+        tariffClassId: { type: string, format: uuid }
+        tariffClassName: { type: string, example: Basic }
+        passengers:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              type: { type: string, example: adult }
+              firstName: { type: string }
+              lastName: { type: string }
+              notes: { type: array, items: { type: object } }
+              isNoShow: { type: boolean }
+              seatPreference: { type: object, nullable: true }
+              assignedSeat: { type: object, nullable: true }
+        pricing:
+          type: object
+          properties:
+            totalAmount: { type: number, example: 66 }
+            currency: { type: string, example: EUR }
+            priceType: { type: string, example: estimate }
+            breakdown:
+              type: object
+              properties:
+                tickets: { type: number, example: 66 }
+                ancillaries: { type: number, example: 0 }
+            priceBreakdown:
+              type: object
+              description: Detailed per-item gross/net/VAT (10 % VAT).
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      label: { type: string, example: Adults }
+                      quantity: { type: integer }
+                      unitAmountGross: { type: number, example: 66 }
+                      unitAmountNet: { type: number, example: 60 }
+                      unitAmountVat: { type: number, example: 6 }
+                      totalGross: { type: number }
+                      totalNet: { type: number }
+                      totalVat: { type: number }
+                      vatRate: { type: number, example: 0.1 }
+                      currency: { type: string, example: EUR }
+                total:
+                  type: object
+                  properties:
+                    gross: { type: number, example: 66 }
+                    net: { type: number, example: 60 }
+                    vat: { type: number, example: 6 }
+                vatRate: { type: number, example: 0.1 }
+                currency: { type: string, example: EUR }
+        ancillaryServices:
+          type: array
+          items: { type: object }
+        expiresAt:
+          type: string
+          format: date-time
+          description: ~30 minutes after creation.
+
+    PaymentInitiation:
+      type: object
+      properties:
+        orderId: { type: string, format: uuid }
+        bookingId: { type: string, format: uuid }
+        status: { type: string, enum: [initiated], example: initiated }
+        paymentToken: { type: string, example: ORD-54f1e76f-f38f-4a8d-99d9-46dbea515a46 }
+        redirectUrl:
+          type: string
+          description: Empty for the embedded SumUp flow.
+          example: ""
+        checkoutId:
+          type: string
+          format: uuid
+          description: SumUp checkout id; drives the SumUp hosted card widget.
+
+    DiscountValidation:
+      type: object
+      properties:
+        valid: { type: boolean, example: false }
+        errorCode: { type: string, nullable: true, example: CODE_INVALID }
+        message: { type: string, example: The code is not valid. }
+
+    StationFull:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        municipality:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            names: { $ref: '#/components/schemas/LocalizedName' }
+            codes:
+              type: object
+              properties:
+                db: { type: string, example: HH }
+            countryCode: { type: string, example: DE }
+            region: { type: string, nullable: true, example: Hamburg }
+            latitude: { type: string }
+            longitude: { type: string }
+            archivedAt: { type: string, format: date-time, nullable: true }
+        municipalityId: { type: string, format: uuid }
+        names: { $ref: '#/components/schemas/LocalizedName' }
+        codes:
+          type: object
+          properties:
+            plc: { type: string, example: DE 14393 }
+            uic: { type: string, nullable: true, example: "8002549" }
+        officialName: { type: string, example: Hamburg Hbf }
+        stationCode: { type: string, nullable: true }
+        eva: { type: string, nullable: true }
+        plc: { type: string, example: DE 14393 }
+        ibnr: { type: string, nullable: true }
+        status: { type: string, example: planned }
+        address: { type: string, nullable: true }
+        latitude: { type: string }
+        longitude: { type: string }
+        timezone: { type: string, example: Europe/Berlin }
+        isMainStation: { type: boolean }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TripTimetableEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid, description: The tripId. }
+        timetableId: { type: string, format: uuid }
+        date: { type: string, format: date }
+        trainId: { type: string, format: uuid }
+        trainNumber: { type: string, example: "1791" }
+        locomotiveName: { type: string, nullable: true }
+        locomotiveId: { type: string, format: uuid, nullable: true }
+        status: { type: string, example: bookable }
+        isAssignmentLocked: { type: boolean }
+        seatAllocationFrozenAt: { type: string, format: date-time, nullable: true }
+        seatAllocationCommunicatedAt: { type: string, format: date-time, nullable: true }
+        simulationOriginDepartureAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    Error:
+      type: object
+      description: |-
+        Standard NestJS error envelope. `message` is an array of strings for class-validator failures, a single string otherwise.
+      properties:
+        statusCode: { type: integer, example: 400 }
+        error: { type: string, example: Bad Request }
+        message:
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string }
+          example: ["from must be a UUID", "to must be a UUID"]
+        path: { type: string, example: /api/trips/search }
+        timestamp: { type: string, format: date-time }
+
+    AncillaryAdded:
+      type: object
+      properties:
+        bookingId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        included: { type: boolean, example: false }
+        ancillary:
+          type: object
+          properties:
+            serviceId: { type: string, format: uuid }
+            code: { type: string, example: DIRECTION_SELECTION }
+            quantity: { type: integer, example: 1 }
+            unitAmount: { type: number, example: 5 }
+            totalAmount: { type: number, example: 5 }
+            currency: { type: string, example: EUR }
+            paymentStatus: { type: string, example: paid }
+        bookingTotalAmount:
+          type: number
+          description: Running booking total after this add-on.
+          example: 192

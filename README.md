@@ -14,6 +14,26 @@ Booking API for [nightjet.com](https://www.nightjet.com), including:
 - Ticket management (cancel, PDF generation, tax certificates)
 - 73 discount card codes (BahnCard, Vorteilscard, Halbtax, Interrail, etc.)
 
+### NOX Mobility (`noxmobility-api.yaml`)
+Booking API for [noxmobility.com](https://noxmobility.com), a German night-train startup, including:
+- Public REST/JSON API (`api.noxmobility.com`, no auth, CORS-enabled)
+- Trains 1791 (Hamburg→München) / 1790 (München→Hamburg), season 2027-03-23 → 2027-12-10, ~6 days/week; single unit "NOX2"
+- Whole network is 4 cities: Hamburg, Bremen, Augsburg, München (~10h 51m end to end)
+- Read-only discovery endpoints: `/api/health`, `/api/stations` (full master data), `/api/trips` (timetable), `/api/trips/{id}` (detail)
+- Station/municipality autocomplete with DB short codes and UIC numbers
+- Fare calendar (cheapest-per-day, `available` / `no_service`)
+- Trip search with per-tariff prices, seat availability, and full intermediate-stop list
+- Per-stop boarding/alighting rules (`allowsBoarding` / `allowsAlighting`)
+- 2 tariff classes: Basic, Flex (with tiered rebooking/cancellation fee schedules)
+- 3 ancillaries: Easy-Access Seat (0€, 3/train), seat direction (5€), oversized luggage (9€)
+- Price-lock flow: `prepare` issues a signed JWT `priceToken` (~10-min lock) replayed into booking
+- Ancillaries attached after booking via `/bookings/{id}/ancillaries` (`product_id`, running total)
+- Full booking flow (autocomplete → fare-calendar → search → prepare → booking → ancillaries → pay)
+- Payment via SumUp hosted card widget (`checkoutId`); card data never touches the API
+- Discount-code validation endpoint
+- Child fare = 75% of adult, infants free; EUR throughout, 10% VAT
+- Booking with ~30-min hold and human 6-char reference (e.g. `2C0IQU`)
+
 ### European Sleeper (`european-sleeper-api.yaml`)
 Booking API for [europeansleeper.eu](https://www.europeansleeper.eu), including:
 - `/constants` endpoint with full station/route/pricing configuration
